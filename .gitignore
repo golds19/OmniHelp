@@ -109,3 +109,6 @@ models/
 *.pth
 *.ckpt
 *.h5
+
+# data
+data/
