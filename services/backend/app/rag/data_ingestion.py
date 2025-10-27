@@ -110,7 +110,7 @@ class DataEmbedding:
                     print(f"Error processing image on page {i}, image {img_index}: {e}")
                     continue
         doc.close()
-        return self.all_docs, self.all_embeddings
+        return self.all_docs, self.all_embeddings, self.image_data_store
 
 
 if __name__ == "__main__":
