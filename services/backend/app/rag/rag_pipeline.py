@@ -1,7 +1,7 @@
-from retriever import retrieve_multimodal, create_multimodal_message
-from data_ingestion import DataEmbedding
+from .retriever import retrieve_multimodal, create_multimodal_message
+from .data_ingestion import DataEmbedding
 import numpy as np
-from vectorstore import create_vectorestore
+from .vectorstore import create_vectorestore
 from langchain_openai import ChatOpenAI
 from dotenv import load_dotenv
 

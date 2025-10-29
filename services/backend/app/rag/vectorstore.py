@@ -1,5 +1,5 @@
 from langchain_community.vectorstores import FAISS
-from data_ingestion import DataEmbedding
+from .data_ingestion import DataEmbedding
 import numpy as np
 
 def create_vectorestore(embeddings_array, all_docs):

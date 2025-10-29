@@ -1,4 +1,4 @@
-from data_ingestion import embed_text
+from .data_ingestion import embed_text
 from langchain.schema.messages import HumanMessage
 
 def retrieve_multimodal(vectorstore, query, k=3):
@@ -26,7 +26,7 @@ def create_multimodal_message(query, retrieved_docs, image_data_store):
 
     # separate text and image documents
     text_docs = [doc for doc in retrieved_docs if doc.metadata.get("type") == "text"]
-    image_docs = [doc for doc in retrieved_docs if doc.metatada.get("type") == "image"]
+    image_docs = [doc for doc in retrieved_docs if doc.metadata.get("type") == "image"]
 
     # Add text context
     if text_docs:

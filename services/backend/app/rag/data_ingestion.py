@@ -6,7 +6,7 @@ import base64
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from transformers import CLIPProcessor, CLIPModel
 from PIL import Image
-from pdf_handler import load_pdf, split_pdf
+from .pdf_handler import load_pdf, split_pdf
 from langchain_core.documents import Document
 
 
