@@ -2,8 +2,17 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
+interface QueryResponse {
+  answer: string;
+  sources: Array<{ page: number; type: string }>;
+  num_images: number;
+  num_text_chunks: number;
+  agent_type?: string;
+}
+
 export default function TestPost() {
   const [response, setResponse] = useState("");
+  const [metadata, setMetadata] = useState<QueryResponse | null>(null);
   const [input, setInput] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [ingested, setIngested] = useState(false);
@@ -19,6 +28,7 @@ export default function TestPost() {
     setIngested(false);
     setIngestStatus("");
     setResponse("");
+    setMetadata(null);
   };
 
   const handleIngest = async (e: React.FormEvent) => {
@@ -31,14 +41,15 @@ export default function TestPost() {
     console.log("🚀 Starting ingestion for:", file.name);
     setIngestStatus("");
     setResponse("");
+    setMetadata(null);
 
     startTransition(async () => {
       try {
         const formData = new FormData();
         formData.append("file", file);
-        
-        console.log("📤 Sending POST request to /ingest");
-        const res = await fetch("http://localhost:8000/ingest", {
+
+        console.log("📤 Sending POST request to /ingest-agentic");
+        const res = await fetch("http://localhost:8000/ingest-agentic", {
           method: "POST",
           body: formData,
         });
@@ -49,7 +60,7 @@ export default function TestPost() {
 
         if (res.ok) {
           setIngested(true);
-          setIngestStatus("Document ingested successfully.");
+          setIngestStatus("Document ingested successfully with Agentic RAG 🤖");
           console.log("✅ Ingestion successful");
         } else {
           setIngestStatus(data.detail || "Ingestion failed.");
@@ -66,25 +77,28 @@ export default function TestPost() {
     e.preventDefault();
     console.log("🔍 Querying with input:", input);
     setResponse("");
+    setMetadata(null);
 
     startTransition(async () => {
       try {
-        console.log("📤 Sending POST request to /query");
-        const res = await fetch("http://localhost:8000/query", {
+        console.log("📤 Sending POST request to /query-agentic");
+        const res = await fetch("http://localhost:8000/query-agentic", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ question: input }),
         });
 
         console.log("📥 Query response status:", res.status);
-        const data = await res.json();
+        const data: QueryResponse = await res.json();
         console.log("📦 Query response data:", data);
 
         setResponse(data.answer || JSON.stringify(data));
+        setMetadata(data);
         console.log("✅ Query successful");
       } catch (err) {
         console.error("🔥 Query error:", err);
         setResponse("Error contacting backend");
+        setMetadata(null);
       }
     });
   };
@@ -126,13 +140,21 @@ export default function TestPost() {
           <h1 className={`text-4xl font-bold mb-3 ${
             isDark ? "text-white" : "text-slate-800"
           }`}>
-            Document Intelligence
+            Agentic Document Intelligence 🤖
           </h1>
           <p className={`text-lg ${
             isDark ? "text-slate-300" : "text-slate-600"
           }`}>
-            Upload documents and query them with AI-powered insights
+            Upload documents and query them with ReAct AI Agent
           </p>
+          <div className={`mt-2 inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm ${
+            isDark ? "bg-blue-900/30 text-blue-400" : "bg-blue-100 text-blue-700"
+          }`}>
+            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clipRule="evenodd" />
+            </svg>
+            Powered by ReAct Agent
+          </div>
         </div>
 
         {/* Main Card */}
@@ -315,7 +337,7 @@ export default function TestPost() {
                 }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
                 </svg>
-                Response
+                Agent Response
               </h3>
               <div className={`min-h-[120px] p-6 rounded-lg border ${
                 isDark
@@ -332,6 +354,95 @@ export default function TestPost() {
                   }`}>Your answer will appear here...</p>
                 )}
               </div>
+
+              {/* Metadata Section */}
+              {metadata && (
+                <div className={`p-4 rounded-lg border space-y-3 ${
+                  isDark
+                    ? "bg-slate-700/50 border-slate-600"
+                    : "bg-blue-50/50 border-blue-200"
+                }`}>
+                  <h4 className={`text-sm font-semibold flex items-center gap-2 ${
+                    isDark ? "text-slate-300" : "text-slate-700"
+                  }`}>
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                    </svg>
+                    Retrieval Metadata
+                  </h4>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div className={`p-3 rounded-lg ${
+                      isDark ? "bg-slate-600/50" : "bg-white"
+                    }`}>
+                      <div className={`text-xs mb-1 ${
+                        isDark ? "text-slate-400" : "text-slate-500"
+                      }`}>Text Chunks</div>
+                      <div className={`text-lg font-bold ${
+                        isDark ? "text-blue-400" : "text-blue-600"
+                      }`}>{metadata.num_text_chunks}</div>
+                    </div>
+                    <div className={`p-3 rounded-lg ${
+                      isDark ? "bg-slate-600/50" : "bg-white"
+                    }`}>
+                      <div className={`text-xs mb-1 ${
+                        isDark ? "text-slate-400" : "text-slate-500"
+                      }`}>Images</div>
+                      <div className={`text-lg font-bold ${
+                        isDark ? "text-green-400" : "text-green-600"
+                      }`}>{metadata.num_images}</div>
+                    </div>
+                    <div className={`p-3 rounded-lg ${
+                      isDark ? "bg-slate-600/50" : "bg-white"
+                    }`}>
+                      <div className={`text-xs mb-1 ${
+                        isDark ? "text-slate-400" : "text-slate-500"
+                      }`}>Total Sources</div>
+                      <div className={`text-lg font-bold ${
+                        isDark ? "text-purple-400" : "text-purple-600"
+                      }`}>{metadata.sources.length}</div>
+                    </div>
+                    <div className={`p-3 rounded-lg ${
+                      isDark ? "bg-slate-600/50" : "bg-white"
+                    }`}>
+                      <div className={`text-xs mb-1 ${
+                        isDark ? "text-slate-400" : "text-slate-500"
+                      }`}>Agent Type</div>
+                      <div className={`text-sm font-semibold ${
+                        isDark ? "text-orange-400" : "text-orange-600"
+                      }`}>{metadata.agent_type || "N/A"}</div>
+                    </div>
+                  </div>
+
+                  {/* Sources List */}
+                  {metadata.sources.length > 0 && (
+                    <div className="mt-3">
+                      <div className={`text-xs mb-2 font-medium ${
+                        isDark ? "text-slate-400" : "text-slate-600"
+                      }`}>
+                        Sources Referenced:
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {metadata.sources.map((source, idx) => (
+                          <span
+                            key={idx}
+                            className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs ${
+                              source.type === "image"
+                                ? isDark
+                                  ? "bg-green-900/30 text-green-400"
+                                  : "bg-green-100 text-green-700"
+                                : isDark
+                                ? "bg-blue-900/30 text-blue-400"
+                                : "bg-blue-100 text-blue-700"
+                            }`}
+                          >
+                            {source.type === "image" ? "🖼️" : "📄"} Page {source.page}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -340,7 +451,7 @@ export default function TestPost() {
         <div className={`text-center mt-8 text-sm ${
           isDark ? "text-slate-400" : "text-slate-500"
         }`}>
-          Powered by AI-driven document understanding
+          Powered by Agentic RAG with ReAct Agent & CLIP Embeddings
         </div>
       </div>
     </main>

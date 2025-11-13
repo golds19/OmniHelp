@@ -8,8 +8,10 @@ import shutil
 from typing import Optional
 
 from app.rag.data_ingestion import DataEmbedding
-from app.rag.vectorstore import create_vectorestore
-from app.rag.rag_pipeline import multimodal_pdf_rag_pipeline
+from app.rag.vectorstore import VectorStore
+from app.rag.rag_pipeline import MultiModalRAG
+from app.rag.rag_manager import MultiModalRAGSystem
+from app.rag.graph_builder import run_agentic_rag
 from langchain_openai import ChatOpenAI
 from dotenv import load_dotenv
 
@@ -31,11 +33,14 @@ app.add_middleware(
 )
 
 # Initialize OpenAI Chat model
-llm = ChatOpenAI(model="gpt-5-nano", temperature=0.2)
+llm = ChatOpenAI(model="gpt-4.1-mini", temperature=0.2)
 
-# Store vectorstore and image data store in memory
+# Store vectorstore and image data store in memory (for non-agentic RAG)
 vectorstore = None
 image_data_store = {}
+
+# Initialize Agentic RAG System (singleton)
+agentic_rag_system = MultiModalRAGSystem()
 
 # Simple GET endpoint for testing
 @app.get("/ping")
@@ -69,12 +74,14 @@ async def ingest_document(file: UploadFile = File(...)):
         # Process and embed documents
         data_embedder = DataEmbedding(str(temp_file))
         docs, embeddings, image_data_store = data_embedder.process_and_embedd_docs()
-                
-        # Create vector store
-        vectorstore = create_vectorestore(
-            embeddings_array=embeddings,
-            all_docs=docs
+
+        # Create vector store using VectorStore class
+        vs = VectorStore(
+            all_docs=docs,
+            all_embeddings=embeddings,
+            image_data_store=image_data_store
         )
+        vectorstore = vs.create_vectorstore()
         
         return JSONResponse(
             content={"message": f"Successfully processed {file.filename}"},
@@ -104,20 +111,110 @@ async def query_documents(query: Query):
         )
     
     try:
-        response = multimodal_pdf_rag_pipeline(
+        # Use the new MultiModalRAG class
+        rag = MultiModalRAG(
             query=query.question,
+            vectorStore=vectorstore,
+            image_data_store=image_data_store,
             llm=llm,
-            vectorstore=vectorstore,
-            image_data_store=image_data_store
+            k=5
         )
-        
+        result = rag.generate()
+
         return JSONResponse(
-            content={"answer": response},
+            content={
+                "answer": result["answer"],
+                "sources": result["sources"],
+                "num_images": result["num_images"],
+                "num_text_chunks": result["num_text_chunks"]
+            },
             status_code=200
         )
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ========== Agentic RAG Endpoints ==========
+
+@app.post("/ingest-agentic")
+async def ingest_document_agentic(file: UploadFile = File(...)):
+    """
+    Endpoint for ingesting PDF documents into the Agentic RAG system.
+    """
+    global agentic_rag_system
+
+    # Verify file is PDF
+    if not file.filename.endswith('.pdf'):
+        raise HTTPException(status_code=400, detail="Only PDF files are supported")
+
+    # Create temporary file to save the upload
+    temp_dir = Path("temp")
+    temp_dir.mkdir(exist_ok=True)
+    temp_file = temp_dir / file.filename
+
+    try:
+        # Save uploaded file
+        with temp_file.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        # Initialize the agentic RAG system
+        agentic_rag_system.initialize(pdf_path=str(temp_file), vision_llm=llm)
+
+        return JSONResponse(
+            content={
+                "message": f"Successfully processed {file.filename} for Agentic RAG",
+                "status": "initialized"
+            },
+            status_code=200
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    finally:
+        # Cleanup temporary file
+        if temp_file.exists():
+            temp_file.unlink()
+        file.file.close()
+
+
+@app.post("/query-agentic")
+async def query_documents_agentic(query: Query):
+    """
+    Endpoint for querying the Agentic RAG system with questions.
+    Uses a ReAct agent that can reason and retrieve documents.
+    """
+    global agentic_rag_system
+
+    if not agentic_rag_system.is_initialized():
+        raise HTTPException(
+            status_code=400,
+            detail="Agentic RAG system not initialized. Please ingest a document first using /ingest-agentic."
+        )
+
+    try:
+        # Run the agentic RAG workflow
+        result = run_agentic_rag(
+            question=query.question,
+            llm=llm,
+            rag_system=agentic_rag_system
+        )
+
+        return JSONResponse(
+            content={
+                "answer": result["answer"],
+                "sources": result["sources"],
+                "num_images": result["num_images"],
+                "num_text_chunks": result["num_text_chunks"],
+                "agent_type": "ReAct"
+            },
+            status_code=200
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 if __name__ == "__main__":
     import uvicorn

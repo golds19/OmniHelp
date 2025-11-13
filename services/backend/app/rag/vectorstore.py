@@ -1,26 +1,33 @@
+from dataclasses import dataclass
+from typing import List, Dict
 from langchain_community.vectorstores import FAISS
-from .data_ingestion import DataEmbedding
 import numpy as np
 
-def create_vectorestore(embeddings_array, all_docs):
-    vectore_store = FAISS.from_embeddings(
-        text_embeddings=[(doc.page_content, emb) for doc, emb in zip(all_docs, embeddings_array)],
-        embedding=None,
-        metadatas=[doc.metadata for doc in all_docs]
-    )
-    return vectore_store
+
+@dataclass
+class VectorStore:
+    """
+    Class for creating and managing FAISS vector stores with CLIP embeddings.
+    """
+    all_docs: List
+    all_embeddings: List
+    image_data_store: Dict
+
+    def create_vectorstore(self):
+        """
+        Create unified FAISS vector store with CLIP embeddings.
+
+        Returns:
+            FAISS: Vector store instance
+        """
+        embedding_array = np.array(self.all_embeddings)
+        vector_store = FAISS.from_embeddings(
+            text_embeddings=[(doc.page_content, emb) for doc, emb in zip(self.all_docs, embedding_array)],
+            embedding=None,
+            metadatas=[doc.metadata for doc in self.all_docs]
+        )
+        return vector_store
+
 
 if __name__ == "__main__":
-    path = "C:/Research Folder/AI Projects/Lifeforge/services/backend/app/rag/data/multimodal_sample.pdf"
-    data_embedder = DataEmbedding(path)
-    docs, embeddings = data_embedder.process_and_embedd_docs()
-
-    embeddings_array = np.array(embeddings)
-    # create and store embeddings in vectorestore
-    try:
-        vector_store = create_vectorestore(
-        embeddings_array=embeddings_array,
-        all_docs=docs)
-        print(vector_store)
-    except Exception as e:
-        print(f"Failed creating and storing embedding in vectorstore with error {e}")
+    print("Testing")

@@ -1,64 +1,96 @@
-from .data_ingestion import embed_text
+from dataclasses import dataclass
+from typing import Dict
+from .data_ingestion import CLIPEmbedder
 from langchain.schema.messages import HumanMessage
+from langchain_community.vectorstores import FAISS
 
-def retrieve_multimodal(vectorstore, query, k=3):
-    """Unified using CLIP embeddings for both text and images"""
-    query_embedding = embed_text(query)
 
-    # search in unified vector store
-    #vectorstore = create_vectorestore(embedding_arrays, all_docs)
-    results = vectorstore.similarity_search_by_vector(
-        embedding=query_embedding,
-        k=k
-    )
+@dataclass
+class MultiModalRetrieval:
+    """
+    Class for unified retrieval of text and images using CLIP embeddings.
+    """
+    query: str
+    vectorStore: FAISS
+    image_data_store: Dict
+    k: int = 5
 
-    return results
+    def __post_init__(self):
+        """Initialize the CLIPEmbedder instance after dataclass initialization."""
+        self.embedder = CLIPEmbedder()
 
-def create_multimodal_message(query, retrieved_docs, image_data_store):
-    """Create a message with both text and images for the LLM model"""
-    content = []
+    def retrieve_multimodal(self):
+        """
+        Unified retrieval for text and images.
 
-    # Add the query
-    content.append({
-        "type": "text",
-        "text": f"Question: {query}\n\nContext:\n"
-    })
+        Returns:
+            List of retrieved documents
+        """
+        # Embed query using CLIP
+        query_embedding = self.embedder.embed_text(self.query)
 
-    # separate text and image documents
-    text_docs = [doc for doc in retrieved_docs if doc.metadata.get("type") == "text"]
-    image_docs = [doc for doc in retrieved_docs if doc.metadata.get("type") == "image"]
+        # Search in unified vector store
+        results = self.vectorStore.similarity_search_by_vector(
+            embedding=query_embedding,
+            k=self.k
+        )
+        return results
 
-    # Add text context
-    if text_docs:
-        text_context = "\n\n".join([
-            f"[Page {doc.metadata['page']}]: {doc.page_content}"
-            for doc in text_docs
-        ])
+    def create_multimodal_message(self, retrieved_docs):
+        """
+        Create a message with both text and images for GPT-4V.
+
+        Args:
+            retrieved_docs: List of retrieved documents
+
+        Returns:
+            HumanMessage: Formatted message for the LLM
+        """
+        content = []
+
+        # Add the query
         content.append({
             "type": "text",
-            "text": f"Text exerpts:\n{text_context}\n"
+            "text": f"Question: {self.query}\n\nContext:\n"
         })
 
-    # Add images context
-    for doc in image_docs:
-        image_id = doc.metadata.get("image_id")
-        if image_id and image_id in image_data_store:
+        # Separate text and image documents
+        text_docs = [doc for doc in retrieved_docs if doc.metadata.get("type") == "text"]
+        image_docs = [doc for doc in retrieved_docs if doc.metadata.get("type") == "image"]
+
+        # Add text context
+        if text_docs:
+            text_context = "\n\n".join([
+                f"[Page {doc.metadata['page']}]: {doc.page_content}"
+                for doc in text_docs
+            ])
             content.append({
                 "type": "text",
-                "text": f"\n[Image from page {doc.metadata['page']}]\n"
-            })
-            content.append({
-                "type": "image_url",
-                "image_url": {
-                    "url": f"data:image/png;base64,{image_data_store[image_id]}",
-                    "alt_text": f"Image from page {doc.metadata['page']}"
-                }
+                "text": f"Text excerpts:\n{text_context}\n"
             })
 
-    # Add instruction
-    content.append({
-        "type": "text",
-        "text": "\nAnswer the question based on the provided context. If the context does not contain the answer, say i don't know."
-    })
+        # Add images context
+        for doc in image_docs:
+            image_id = doc.metadata.get("image_id")
+            if image_id and image_id in self.image_data_store:
+                content.append({
+                    "type": "text",
+                    "text": f"\n[Image from page {doc.metadata['page']}]\n"
+                })
+                content.append({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/png;base64,{self.image_data_store[image_id]}",
+                        "alt_text": f"Image from page {doc.metadata['page']}"
+                    }
+                })
 
-    return HumanMessage(content=content)
+        # Add instruction
+        content.append({
+            "type": "text",
+            "text": "\nAnswer the question based on the provided context. If the context does not contain the answer, say 'I don't know'."
+        })
+
+        return HumanMessage(content=content)
+
+

@@ -3,6 +3,8 @@ import torch
 import numpy as np
 import io
 import base64
+from dataclasses import dataclass, field
+from typing import List, Dict, Optional
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from transformers import CLIPProcessor, CLIPModel
 from PIL import Image
@@ -10,49 +12,80 @@ from .pdf_handler import load_pdf, split_pdf
 from langchain_core.documents import Document
 
 
-# Initializing the CLIP model for unified embeddings
+@dataclass
+class CLIPEmbedder:
+    """
+    Encapsulates CLIP model and provides embedding functionality for text and images.
+    """
+    model_name: str = "openai/clip-vit-base-patch32"
+    model: CLIPModel = field(init=False)
+    processor: CLIPProcessor = field(init=False)
 
-clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
-clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
-clip_model.eval()
+    def __post_init__(self):
+        """Initialize the CLIP model and processor after dataclass initialization."""
+        self.model = CLIPModel.from_pretrained(self.model_name)
+        self.processor = CLIPProcessor.from_pretrained(self.model_name)
+        self.model.eval()
 
-# define embedding functions for text and images
+    def embed_image(self, image_data):
+        """
+        Embed an image using the CLIP Model.
 
-def embed_images(image_data):
-    """Embed an image using the CLIP Model"""
-    if isinstance(image_data, str):
-        image = Image.open(image_data).convert("RGB")
-    else: # if PIL image
-        image = image_data
+        Args:
+            image_data: Either a file path string or a PIL Image object
 
-    inputs = clip_processor(images=image, return_tensors="pt")
-    with torch.no_grad():
-        features = clip_model.get_image_features(**inputs)
-        # Normalize the features
-        features = features / features.norm(dim=-1, keepdim=True)
-        return features.squeeze().numpy()
-    
-def embed_text(text):
-    """Embed text using CLIP"""
-    inputs = clip_processor(
-        text=text,
-        return_tensors="pt",
-        padding=True,
-        truncation=True,
-        max_length=77 # CLIP's max token length
-    )
-    with torch.no_grad():
-        features=clip_model.get_text_features(**inputs)
-        # Normalize the features
-        features = features / features.norm(dim=-1, keepdim=True)
-        return features.squeeze().numpy()
-    
+        Returns:
+            numpy.ndarray: Normalized image embedding vector
+        """
+        if isinstance(image_data, str):
+            image = Image.open(image_data).convert("RGB")
+        else:
+            image = image_data
+
+        inputs = self.processor(images=image, return_tensors="pt")
+        with torch.no_grad():
+            features = self.model.get_image_features(**inputs)
+            features = features / features.norm(dim=-1, keepdim=True)
+            return features.squeeze().numpy()
+
+    def embed_text(self, text: str):
+        """
+        Embed text using CLIP.
+
+        Args:
+            text: The text string to embed
+
+        Returns:
+            numpy.ndarray: Normalized text embedding vector
+        """
+        inputs = self.processor(
+            text=text,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            max_length=77
+        )
+        with torch.no_grad():
+            features = self.model.get_text_features(**inputs)
+            features = features / features.norm(dim=-1, keepdim=True)
+            return features.squeeze().numpy()
+
+
+@dataclass
 class DataEmbedding:
-    def __init__(self, pdf_path):
-        self.pdf_path = pdf_path
-        self.all_docs = []
-        self.all_embeddings = []
-        self.image_data_store = {}
+    """
+    Handles PDF processing and embedding generation for text and images.
+    """
+    pdf_path: str
+    embedder: Optional[CLIPEmbedder] = None
+    all_docs: List = field(default_factory=list)
+    all_embeddings: List = field(default_factory=list)
+    image_data_store: Dict = field(default_factory=dict)
+
+    def __post_init__(self):
+        """Initialize the CLIPEmbedder instance after dataclass initialization."""
+        if self.embedder is None:
+            self.embedder = CLIPEmbedder()
 
     def process_pdf(self):
         doc = load_pdf(self.pdf_path)
@@ -72,7 +105,7 @@ class DataEmbedding:
 
                 # Embed each chunk using CLIP
                 for chunk in text_chunks:
-                    embedding = embed_text(chunk.page_content)
+                    embedding = self.embedder.embed_text(chunk.page_content)
                     self.all_embeddings.append(embedding)
                     self.all_docs.append(chunk)
             
@@ -100,7 +133,7 @@ class DataEmbedding:
                     self.image_data_store[image_id] = img_base64
                     
                     # Embed document using CLIP
-                    embedding = embed_images(pil_image)
+                    embedding = self.embedder.embed_image(pil_image)
                     self.all_embeddings.append(embedding)
 
                     # create document for image
@@ -114,9 +147,4 @@ class DataEmbedding:
 
 
 if __name__ == "__main__":
-    path = "C:/Research Folder/AI Projects/Lifeforge/services/backend/app/rag/data/multimodal_sample.pdf"
-    data_embedder = DataEmbedding(path)
-    docs, embeddings = data_embedder.process_and_embedd_docs()
-    
-    print(f"{len(docs)} documents processed")
-    print(f"{len(embeddings)} embeddings generated")
+    print("testing")

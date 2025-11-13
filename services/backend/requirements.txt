@@ -24,4 +24,7 @@ IPython
 fastapi
 uvicorn
 python-multipart
+langgraph
+pymupdf
+sentence-transformers
 
