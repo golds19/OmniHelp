@@ -112,3 +112,6 @@ models/
 
 # data
 data/
+
+# notes
+*.md
