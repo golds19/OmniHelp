@@ -3,7 +3,7 @@ Agent tools for the Agentic RAG system.
 """
 
 from langchain.tools import Tool
-from .rag_manager import MultiModalRAGSystem
+from ..core.rag_manager import MultiModalRAGSystem
 import asyncio
 from typing import Optional
 from mcp import ClientSession, StdioServerParameters

@@ -7,11 +7,11 @@ from pathlib import Path
 import shutil
 from typing import Optional
 
-from app.rag.data_ingestion import DataEmbedding
-from app.rag.vectorstore import VectorStore
-from app.rag.rag_pipeline import MultiModalRAG
-from app.rag.rag_manager import MultiModalRAGSystem
-from app.rag.graph_builder import run_agentic_rag
+from app.rag.core.data_ingestion import DataEmbedding
+from app.rag.core.vectorstore import VectorStore
+from app.rag.core.rag_pipeline import MultiModalRAG
+from app.rag.core.rag_manager import MultiModalRAGSystem
+from app.rag.agent.graph_builder import run_agentic_rag
 from langchain_openai import ChatOpenAI
 from dotenv import load_dotenv
 

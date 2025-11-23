@@ -7,7 +7,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
 
 from .rag_state import AgenticRAGState
-from .rag_manager import MultiModalRAGSystem
+from ..core.rag_manager import MultiModalRAGSystem
 from .agent_tools import get_agent_tools
 from .react_node import create_agent_executor, agent_node
 
