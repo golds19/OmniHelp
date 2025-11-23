@@ -27,4 +27,6 @@ python-multipart
 langgraph
 pymupdf
 sentence-transformers
+mcp[cli] 
+httpx
 

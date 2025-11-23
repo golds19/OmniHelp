@@ -4,6 +4,11 @@ Agent tools for the Agentic RAG system.
 
 from langchain.tools import Tool
 from .rag_manager import MultiModalRAGSystem
+import asyncio
+from typing import Optional
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+from contextlib import AsyncExitStack
 
 
 def create_rag_retriever_tool(rag_system: MultiModalRAGSystem) -> Tool:
@@ -84,6 +89,29 @@ def create_rag_retriever_tool(rag_system: MultiModalRAGSystem) -> Tool:
             "charts, or any content that might be in the document."
         )
     )
+
+# basic initialization of notion mcp server
+async def connect_to_notion_server(command, args, notion_api_key):
+    """
+    This is a Notion tool for
+    """
+    # initialize the server
+    server_params = StdioServerParameters(
+        command=command,
+        args=[args],
+        env=notion_api_key
+    )
+
+    stdio_transport = await AsyncExitStack().enter_async_context(stdio_client(server_params))
+    stdio, write = stdio_transport
+    Optional[ClientSession] = await AsyncExitStack().enter_async_context(ClientSession(stdio, write))
+
+    await Optional[ClientSession].initialize()
+
+    # List the available tools
+    response = await Optional[ClientSession].list_tools()
+    tools = response.tools
+    print(f"\nConnected to server with tools:", [tool.name for tool in tools])
 
 
 def get_agent_tools(rag_system: MultiModalRAGSystem) -> list:
