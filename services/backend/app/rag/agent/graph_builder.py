@@ -5,6 +5,7 @@ LangGraph builder for the Agentic RAG system.
 from langgraph.graph import StateGraph, END
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
+from typing import AsyncGenerator
 
 from .rag_state import AgenticRAGState
 from ..core.rag_manager import MultiModalRAGSystem
@@ -93,3 +94,38 @@ def run_agentic_rag(
         "num_images": result.get("num_images", 0),
         "num_text_chunks": result.get("num_text_chunks", 0)
     }
+
+
+async def stream_agentic_rag(
+    question: str,
+    llm: ChatOpenAI,
+    rag_system: MultiModalRAGSystem
+) -> AsyncGenerator[str, None]:
+    """
+    Stream tokens from the agentic RAG workflow.
+
+    Args:
+        question: The user's question
+        llm: The language model to use
+        rag_system: The initialized MultiModalRAGSystem
+
+    Yields:
+        String tokens as they are generated
+    """
+    graph = build_agentic_rag_graph(llm, rag_system)
+
+    initial_state = {
+        "messages": [HumanMessage(content=question)],
+        "retrieved_docs": [],
+        "answer": "",
+        "sources": [],
+        "num_images": 0,
+        "num_text_chunks": 0
+    }
+
+    async for chunk, metadata in graph.astream(
+        initial_state,
+        stream_mode="messages",
+    ):
+        if chunk.content:
+            yield chunk.content
