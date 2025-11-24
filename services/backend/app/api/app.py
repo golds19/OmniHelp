@@ -1,6 +1,6 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 import os
 from pathlib import Path
@@ -11,7 +11,7 @@ from app.rag.core.data_ingestion import DataEmbedding
 from app.rag.core.vectorstore import VectorStore
 from app.rag.core.rag_pipeline import MultiModalRAG
 from app.rag.core.rag_manager import MultiModalRAGSystem
-from app.rag.agent.graph_builder import run_agentic_rag
+from app.rag.agent.graph_builder import run_agentic_rag, stream_agentic_rag
 from langchain_openai import ChatOpenAI
 from dotenv import load_dotenv
 
@@ -214,6 +214,37 @@ async def query_documents_agentic(query: Query):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/query-agentic-stream")
+async def query_documents_agentic_stream(query: Query):
+    """
+    Streaming endpoint for querying the Agentic RAG system.
+    Returns tokens as they are generated for real-time display.
+    """
+    global agentic_rag_system
+
+    if not agentic_rag_system.is_initialized():
+        raise HTTPException(
+            status_code=400,
+            detail="Agentic RAG system not initialized. Please ingest a document first using /ingest-agentic."
+        )
+
+    async def generate():
+        try:
+            async for token in stream_agentic_rag(
+                question=query.question,
+                llm=llm,
+                rag_system=agentic_rag_system
+            ):
+                yield token
+        except Exception as e:
+            yield f"\n\nError: {str(e)}"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/plain"
+    )
 
 
 if __name__ == "__main__":

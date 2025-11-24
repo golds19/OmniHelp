@@ -1,5 +1,5 @@
 "use client";
-import { useState, useTransition } from "react";
+import { useState, useTransition, useRef } from "react";
 import { useRouter } from "next/navigation";
 
 interface QueryResponse {
@@ -18,8 +18,10 @@ export default function TestPost() {
   const [ingested, setIngested] = useState(false);
   const [ingestStatus, setIngestStatus] = useState("");
   const [isPending, startTransition] = useTransition();
+  const [isStreaming, setIsStreaming] = useState(false);
   const [isDark, setIsDark] = useState(false);
   const router = useRouter();
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0] || null;
@@ -78,29 +80,61 @@ export default function TestPost() {
     console.log("🔍 Querying with input:", input);
     setResponse("");
     setMetadata(null);
+    setIsStreaming(true);
 
-    startTransition(async () => {
-      try {
-        console.log("📤 Sending POST request to /query-agentic");
-        const res = await fetch("http://localhost:8000/query-agentic", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ question: input }),
-        });
+    abortControllerRef.current = new AbortController();
 
-        console.log("📥 Query response status:", res.status);
-        const data: QueryResponse = await res.json();
-        console.log("📦 Query response data:", data);
+    try {
+      console.log("📤 Sending POST request to /query-agentic-stream");
+      const res = await fetch("http://localhost:8000/query-agentic-stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: input }),
+        signal: abortControllerRef.current.signal,
+      });
 
-        setResponse(data.answer || JSON.stringify(data));
-        setMetadata(data);
-        console.log("✅ Query successful");
-      } catch (err) {
+      console.log("📥 Stream response status:", res.status);
+
+      if (!res.ok) {
+        throw new Error("Failed to query");
+      }
+
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+
+      if (!reader) {
+        throw new Error("No response body");
+      }
+
+      let fullAnswer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        fullAnswer += chunk;
+        setResponse(fullAnswer);
+      }
+
+      console.log("✅ Streaming complete");
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") {
+        console.log("🛑 Stream aborted by user");
+      } else {
         console.error("🔥 Query error:", err);
         setResponse("Error contacting backend");
-        setMetadata(null);
       }
-    });
+    } finally {
+      setIsStreaming(false);
+      abortControllerRef.current = null;
+    }
+  };
+
+  const handleStop = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
   };
 
   console.log("🎨 Rendering - ingested:", ingested, "isPending:", isPending);
@@ -305,23 +339,33 @@ export default function TestPost() {
                   }`}
                   disabled={!ingested}
                 />
-                <button
-                  type="submit"
-                  className="px-8 py-4 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-lg font-medium hover:from-green-700 hover:to-green-800 disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed shadow-md hover:shadow-lg transition-all disabled:shadow-none"
-                  disabled={isPending || !ingested || !input}
-                >
-                  {isPending ? (
-                    <span className="flex items-center gap-2">
-                      <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                      </svg>
-                      Thinking...
-                    </span>
-                  ) : (
-                    "Ask Question"
-                  )}
-                </button>
+                {isStreaming ? (
+                  <button
+                    type="button"
+                    onClick={handleStop}
+                    className="px-8 py-4 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-lg font-medium hover:from-red-700 hover:to-red-800 shadow-md hover:shadow-lg transition-all"
+                  >
+                    Stop
+                  </button>
+                ) : (
+                  <button
+                    type="submit"
+                    className="px-8 py-4 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-lg font-medium hover:from-green-700 hover:to-green-800 disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed shadow-md hover:shadow-lg transition-all disabled:shadow-none"
+                    disabled={isPending || !ingested || !input}
+                  >
+                    {isPending ? (
+                      <span className="flex items-center gap-2">
+                        <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        </svg>
+                        Thinking...
+                      </span>
+                    ) : (
+                      "Ask Question"
+                    )}
+                  </button>
+                )}
               </div>
             </form>
           </div>
@@ -338,6 +382,13 @@ export default function TestPost() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
                 </svg>
                 Agent Response
+                {isStreaming && (
+                  <span className={`ml-2 text-sm animate-pulse ${
+                    isDark ? "text-blue-400" : "text-blue-600"
+                  }`}>
+                    Streaming...
+                  </span>
+                )}
               </h3>
               <div className={`min-h-[120px] p-6 rounded-lg border ${
                 isDark

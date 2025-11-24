@@ -91,27 +91,27 @@ def create_rag_retriever_tool(rag_system: MultiModalRAGSystem) -> Tool:
     )
 
 # basic initialization of notion mcp server
-async def connect_to_notion_server(command, args, notion_api_key):
-    """
-    This is a Notion tool for
-    """
-    # initialize the server
-    server_params = StdioServerParameters(
-        command=command,
-        args=[args],
-        env=notion_api_key
-    )
+# async def connect_to_notion_server(command, args, notion_api_key):
+#     """
+#     This is a Notion tool for
+#     """
+#     # initialize the server
+#     server_params = StdioServerParameters(
+#         command=command,
+#         args=[args],
+#         env=notion_api_key
+#     )
 
-    stdio_transport = await AsyncExitStack().enter_async_context(stdio_client(server_params))
-    stdio, write = stdio_transport
-    Optional[ClientSession] = await AsyncExitStack().enter_async_context(ClientSession(stdio, write))
+#     stdio_transport = await AsyncExitStack().enter_async_context(stdio_client(server_params))
+#     stdio, write = stdio_transport
+#     Optional[ClientSession] = await AsyncExitStack().enter_async_context(ClientSession(stdio, write))
 
-    await Optional[ClientSession].initialize()
+#     await Optional[ClientSession].initialize()
 
-    # List the available tools
-    response = await Optional[ClientSession].list_tools()
-    tools = response.tools
-    print(f"\nConnected to server with tools:", [tool.name for tool in tools])
+#     # List the available tools
+#     response = await Optional[ClientSession].list_tools()
+#     tools = response.tools
+#     print(f"\nConnected to server with tools:", [tool.name for tool in tools])
 
 
 def get_agent_tools(rag_system: MultiModalRAGSystem) -> list:
