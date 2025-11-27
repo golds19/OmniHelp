@@ -27,6 +27,8 @@ python-multipart
 langgraph
 pymupdf
 sentence-transformers
-mcp[cli] 
+mcp[cli]
 httpx
+rank-bm25
+nltk
 

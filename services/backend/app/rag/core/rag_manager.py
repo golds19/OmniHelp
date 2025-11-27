@@ -6,8 +6,11 @@ This ensures we don't rebuild embeddings on every query.
 from typing import Dict, Optional
 from langchain_openai import ChatOpenAI
 from langchain_community.vectorstores import FAISS
+from langchain_community.retrievers import BM25Retriever
 from .data_ingestion import DataEmbedding
 from .vectorstore import VectorStore
+from .config import HybridSearchConfig
+from .retriever import MultiModalRetrieval
 
 
 class MultiModalRAGSystem:
@@ -39,30 +42,45 @@ class MultiModalRAGSystem:
 
         # Load and embed data
         data_embedder = DataEmbedding(pdf_path=pdf_path)
-        self.all_docs, self.all_embeddings, self.image_data_store = \
+        self.all_docs, self.all_embeddings, self.image_data_store, self.text_docs = \
             data_embedder.process_and_embedd_docs()
 
-        # Create vector store
+        # Create vector stores (FAISS + BM25)
         vs = VectorStore(
             all_docs=self.all_docs,
             all_embeddings=self.all_embeddings,
-            image_data_store=self.image_data_store
+            image_data_store=self.image_data_store,
+            text_docs=self.text_docs
         )
-        self.vectorStore = vs.create_vectorstore()
+
+        # Create hybrid retrievers if enabled
+        if HybridSearchConfig.HYBRID_SEARCH_ENABLED:
+            print("📊 Creating hybrid search retrievers (BM25 + FAISS)...")
+            hybrid_stores = vs.create_hybrid_retrievers()
+            self.vectorStore = hybrid_stores["faiss_store"]
+            self.bm25_retriever = hybrid_stores["bm25_retriever"]
+            print(f"✓ Hybrid search enabled (BM25 weight: {HybridSearchConfig.BM25_WEIGHT}, Dense weight: {HybridSearchConfig.DENSE_WEIGHT})")
+        else:
+            print("📊 Creating FAISS vector store only...")
+            self.vectorStore = vs.create_vectorstore()
+            self.bm25_retriever = None
+            print("✓ Dense-only search enabled")
 
         # Store vision LLM
         self.vision_llm = vision_llm
 
         self._initialized = True
-        print(f"✓ RAG system initialized with {len(self.all_docs)} documents")
+        print(f"✓ RAG system initialized with {len(self.all_docs)} documents ({len(self.text_docs)} text chunks)")
 
-    def query(self, question: str, k: int = 5) -> Dict:
+    def query(self, question: str, k: int = 5, use_hybrid: bool = True) -> Dict:
         """
         Query the multimodal RAG system.
+        Supports both hybrid (BM25 + Dense) and dense-only search.
 
         Args:
             question: The query text
             k: Number of documents to retrieve
+            use_hybrid: Whether to use hybrid search (if available)
 
         Returns:
             Dict containing retrieved_docs, sources, num_images, num_text_chunks
@@ -70,14 +88,15 @@ class MultiModalRAGSystem:
         if not self._initialized:
             raise RuntimeError("RAG system not initialized. Please load a document first.")
 
-        from .retriever import MultiModalRetrieval
 
         # Retrieve documents
         retriever = MultiModalRetrieval(
             query=question,
             vectorStore=self.vectorStore,
             image_data_store=self.image_data_store,
-            k=k
+            k=k,
+            bm25_retriever=self.bm25_retriever,
+            use_hybrid=use_hybrid
         )
         retrieved_docs = retriever.retrieve_multimodal()
 
@@ -104,8 +123,10 @@ class MultiModalRAGSystem:
         """Reset the RAG system state."""
         self._initialized = False
         self.vectorStore = None
+        self.bm25_retriever = None
         self.all_docs = []
         self.all_embeddings = []
+        self.text_docs = []
         self.image_data_store = {}
         self.vision_llm = None
         print("RAG system reset.")

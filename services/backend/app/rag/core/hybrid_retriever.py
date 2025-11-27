@@ -1,58 +1,91 @@
 from dataclasses import dataclass
-from typing import Dict, Optional
-from .data_ingestion import CLIPEmbedder
-from langchain.schema.messages import HumanMessage
+from typing import Dict, List
 from langchain_community.vectorstores import FAISS
 from langchain_community.retrievers import BM25Retriever
-from .hybrid_retriever import HybridMultiModalRetrieval
+from langchain.retrievers import EnsembleRetriever
+from langchain.schema.messages import HumanMessage
+from .data_ingestion import CLIPEmbedder
 from .config import HybridSearchConfig
 
 
 @dataclass
-class MultiModalRetrieval:
+class HybridMultiModalRetrieval:
     """
-    Class for unified retrieval of text and images using CLIP embeddings.
-    Supports both dense-only and hybrid (BM25 + Dense) search modes.
+    Class for hybrid retrieval combining BM25 (sparse) and FAISS (dense) retrievers
+    using EnsembleRetriever for automatic fusion.
     """
     query: str
-    vectorStore: FAISS
+    faiss_store: FAISS
+    bm25_retriever: BM25Retriever
     image_data_store: Dict
     k: int = 5
-    bm25_retriever: Optional[BM25Retriever] = None
     use_hybrid: bool = True
 
     def __post_init__(self):
         """Initialize the CLIPEmbedder instance after dataclass initialization."""
         self.embedder = CLIPEmbedder()
 
-    def retrieve_multimodal(self):
+    def retrieve_dense_only(self):
         """
-        Unified retrieval for text and images.
-        Automatically chooses between hybrid and dense-only based on configuration.
+        Dense-only retrieval using FAISS with CLIP embeddings.
+        (Fallback for when hybrid is disabled)
 
         Returns:
             List of retrieved documents
         """
-        # Use hybrid search if enabled and BM25 retriever is available
-        if self.use_hybrid and HybridSearchConfig.HYBRID_SEARCH_ENABLED and self.bm25_retriever is not None:
-            hybrid_retriever = HybridMultiModalRetrieval(
-                query=self.query,
-                faiss_store=self.vectorStore,
-                bm25_retriever=self.bm25_retriever,
-                image_data_store=self.image_data_store,
-                k=self.k,
-                use_hybrid=True
-            )
-            return hybrid_retriever.retrieve_multimodal()
+        # Embed query using CLIP
+        query_embedding = self.embedder.embed_text(self.query)
+
+        # Search in unified vector store
+        results = self.faiss_store.similarity_search_by_vector(
+            embedding=query_embedding,
+            k=self.k
+        )
+        return results
+
+    def retrieve_hybrid(self):
+        """
+        Hybrid retrieval using EnsembleRetriever (BM25 + Dense).
+        Uses LangChain's built-in Reciprocal Rank Fusion (RRF).
+
+        Returns:
+            List of retrieved documents
+        """
+        # Check if BM25 retriever is available
+        if self.bm25_retriever is None:
+            print("BM25 retriever not available, falling back to dense-only search")
+            return self.retrieve_dense_only()
+
+        # Create dense retriever from FAISS store
+        dense_retriever = self.faiss_store.as_retriever(
+            search_kwargs={"k": HybridSearchConfig.K_DENSE_CANDIDATES}
+        )
+
+        # Create ensemble retriever with both sparse and dense
+        ensemble_retriever = EnsembleRetriever(
+            retrievers=[self.bm25_retriever, dense_retriever],
+            weights=[HybridSearchConfig.BM25_WEIGHT, HybridSearchConfig.DENSE_WEIGHT]
+        )
+
+        # Retrieve documents using hybrid search
+        results = ensemble_retriever.invoke(self.query)
+
+        # Limit to top-k results
+        return results[:self.k]
+
+    def retrieve_multimodal(self):
+        """
+        Main retrieval method that chooses between hybrid or dense-only search.
+
+        Returns:
+            List of retrieved documents
+        """
+        if self.use_hybrid and HybridSearchConfig.HYBRID_SEARCH_ENABLED:
+            print(f"🔍 Using hybrid search (BM25: {HybridSearchConfig.BM25_WEIGHT}, Dense: {HybridSearchConfig.DENSE_WEIGHT})")
+            return self.retrieve_hybrid()
         else:
-            # Fallback to dense-only search
-            query_embedding = self.embedder.embed_text(self.query)
-            results = self.vectorStore.similarity_search_by_vector(
-                embedding=query_embedding,
-                k=self.k
-            )
-            return results
-    
+            print("🔍 Using dense-only search")
+            return self.retrieve_dense_only()
 
     def create_multimodal_message(self, retrieved_docs):
         """
@@ -110,5 +143,3 @@ class MultiModalRetrieval:
         })
 
         return HumanMessage(content=content)
-
-

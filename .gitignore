@@ -112,6 +112,10 @@ models/
 
 # data
 data/
+.claude/
 
 # notes
 *.md
+
+# notebooks
+*.ipynb

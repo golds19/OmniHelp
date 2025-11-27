@@ -81,6 +81,7 @@ class DataEmbedding:
     all_docs: List = field(default_factory=list)
     all_embeddings: List = field(default_factory=list)
     image_data_store: Dict = field(default_factory=dict)
+    text_docs: List = field(default_factory=list)  # Text documents only for BM25Retriever
 
     def __post_init__(self):
         """Initialize the CLIPEmbedder instance after dataclass initialization."""
@@ -108,6 +109,9 @@ class DataEmbedding:
                     embedding = self.embedder.embed_text(chunk.page_content)
                     self.all_embeddings.append(embedding)
                     self.all_docs.append(chunk)
+
+                    # Store text docs separately for BM25Retriever
+                    self.text_docs.append(chunk)
             
             # Process images
             # Convert PDF images to PIL format
@@ -143,7 +147,7 @@ class DataEmbedding:
                     print(f"Error processing image on page {i}, image {img_index}: {e}")
                     continue
         doc.close()
-        return self.all_docs, self.all_embeddings, self.image_data_store
+        return self.all_docs, self.all_embeddings, self.image_data_store, self.text_docs
 
 
 if __name__ == "__main__":

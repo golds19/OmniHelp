@@ -1,8 +1,9 @@
 from dataclasses import dataclass
-from typing import Dict
+from typing import Dict, Optional
 from .retriever import MultiModalRetrieval
 from langchain_openai import ChatOpenAI
 from langchain_community.vectorstores import FAISS
+from langchain_community.retrievers import BM25Retriever
 from dotenv import load_dotenv
 
 import os
@@ -14,16 +15,20 @@ load_dotenv()
 class MultiModalRAG:
     """
     Main pipeline for multimodal RAG (Retrieval-Augmented Generation).
+    Supports both dense-only and hybrid (BM25 + Dense) search modes.
     """
     query: str
     vectorStore: FAISS
     image_data_store: Dict
     llm: ChatOpenAI
     k: int = 5
+    bm25_retriever: Optional[BM25Retriever] = None
+    use_hybrid: bool = True
 
     def generate(self):
         """
         Main pipeline for multimodal RAG.
+        Supports both hybrid (BM25 + Dense) and dense-only search.
 
         Returns:
             Dict: Contains answer, sources, and metadata
@@ -33,7 +38,9 @@ class MultiModalRAG:
             query=self.query,
             vectorStore=self.vectorStore,
             image_data_store=self.image_data_store,
-            k=self.k
+            k=self.k,
+            bm25_retriever=self.bm25_retriever,
+            use_hybrid=self.use_hybrid
         )
         context_docs = retriever.retrieve_multimodal()
 
