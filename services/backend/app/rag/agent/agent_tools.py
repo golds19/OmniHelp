@@ -3,9 +3,12 @@ Agent tools for the Agentic RAG system.
 """
 
 from langchain.tools import Tool
+from langchain_core.language_models import BaseChatModel
 from ..core.rag_manager import MultiModalRAGSystem
+from ..core.config import HybridSearchConfig
+from .query_enhancer import enhance_query, decompose_query, generate_hypothetical_answer
 import asyncio
-from typing import Optional
+from typing import Optional, List
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from contextlib import AsyncExitStack
@@ -114,14 +117,161 @@ def create_rag_retriever_tool(rag_system: MultiModalRAGSystem) -> Tool:
 #     print(f"\nConnected to server with tools:", [tool.name for tool in tools])
 
 
-def get_agent_tools(rag_system: MultiModalRAGSystem) -> list:
+def create_query_enhancer_tool(llm: BaseChatModel) -> Tool:
+    """
+    Create a LangChain tool for query expansion/enhancement.
+
+    Args:
+        llm: The language model to use for query expansion
+
+    Returns:
+        Tool: LangChain tool for query enhancement
+    """
+
+    def expand_query(query: str) -> str:
+        """
+        Expand a vague or ambiguous query into multiple specific variations.
+        Use this when the initial query is too broad, vague, or might miss relevant information.
+
+        This helps improve search recall by generating alternative phrasings of the same question.
+
+        Args:
+            query: The query to expand (should be a single question or search term)
+
+        Returns:
+            String containing the original query and its variations
+
+        When to use:
+        - Query is vague (e.g., "main points", "key findings")
+        - Query uses general terms that could be phrased differently
+        - You want to ensure comprehensive coverage of a topic
+
+        When NOT to use:
+        - Query is already very specific (e.g., "accuracy on ImageNet dataset")
+        - Query contains exact identifiers (e.g., "Figure 3", "Table 2")
+        """
+        try:
+            if not HybridSearchConfig.QUERY_EXPANSION_ENABLED:
+                return f"Query expansion is disabled. Original query: {query}"
+
+            # Generate query variations
+            variations = enhance_query(query, llm)
+
+            # Format the response
+            response_parts = [
+                f"Original Query: {query}",
+                "",
+                "Expanded Variations:",
+            ]
+
+            for i, var in enumerate(variations[1:], 1):  # Skip original
+                response_parts.append(f"{i}. {var}")
+
+            response_parts.append("")
+            response_parts.append("Suggestion: Use these variations with the search_document tool to find more comprehensive results.")
+
+            return "\n".join(response_parts)
+
+        except Exception as e:
+            return f"Error expanding query: {str(e)}"
+
+    return Tool(
+        name="expand_query",
+        func=expand_query,
+        description=(
+            "Useful for expanding vague or ambiguous queries into multiple specific variations. "
+            "This improves search recall by generating alternative ways to phrase the same question. "
+            "Use this BEFORE searching when the query is general or might be expressed in different ways. "
+            "Input should be a single query string. "
+            "Output will be multiple variations you can then use with search_document."
+        )
+    )
+
+
+def create_query_decomposer_tool(llm: BaseChatModel) -> Tool:
+    """
+    Create a LangChain tool for query decomposition.
+
+    Args:
+        llm: The language model to use for query decomposition
+
+    Returns:
+        Tool: LangChain tool for query decomposition
+    """
+
+    def decompose_complex_query(query: str) -> str:
+        """
+        Break down a complex, multi-part query into simpler sub-queries.
+        Use this when the query asks multiple things or requires comparison.
+
+        Args:
+            query: The complex query to decompose
+
+        Returns:
+            String containing the sub-queries
+
+        When to use:
+        - Query asks multiple questions (e.g., "What are X and Y?")
+        - Query requires comparison (e.g., "Compare A and B")
+        - Query has multiple aspects (e.g., "accuracy and speed")
+
+        When NOT to use:
+        - Query is simple and focused
+        - Query asks only one thing
+        """
+        try:
+            if not HybridSearchConfig.QUERY_EXPANSION_ENABLED:
+                return f"Query expansion is disabled. Original query: {query}"
+
+            # Decompose the query
+            sub_queries = decompose_query(query, llm)
+
+            # Format the response
+            response_parts = [
+                f"Original Complex Query: {query}",
+                "",
+                "Decomposed Sub-Queries:",
+            ]
+
+            for i, sub_q in enumerate(sub_queries, 1):
+                response_parts.append(f"{i}. {sub_q}")
+
+            response_parts.append("")
+            response_parts.append("Suggestion: Search each sub-query separately with search_document, then synthesize the results.")
+
+            return "\n".join(response_parts)
+
+        except Exception as e:
+            return f"Error decomposing query: {str(e)}"
+
+    return Tool(
+        name="decompose_query",
+        func=decompose_complex_query,
+        description=(
+            "Useful for breaking down complex, multi-part queries into simpler sub-queries. "
+            "Use this when the question asks multiple things, requires comparison, or has multiple aspects. "
+            "Input should be a complex query string. "
+            "Output will be simpler sub-queries you can search individually."
+        )
+    )
+
+
+def get_agent_tools(rag_system: MultiModalRAGSystem, llm: Optional[BaseChatModel] = None) -> list:
     """
     Get all tools for the agent.
 
     Args:
         rag_system: The MultiModalRAGSystem instance
+        llm: Optional language model for query enhancement tools
 
     Returns:
         List of tools
     """
-    return [create_rag_retriever_tool(rag_system)]
+    tools = [create_rag_retriever_tool(rag_system)]
+
+    # Add query enhancement tools if LLM is provided and expansion is enabled
+    if llm is not None and HybridSearchConfig.QUERY_EXPANSION_ENABLED:
+        tools.append(create_query_enhancer_tool(llm))
+        tools.append(create_query_decomposer_tool(llm))
+
+    return tools

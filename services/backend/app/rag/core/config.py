@@ -35,6 +35,10 @@ class HybridSearchConfig:
     REMOVE_STOPWORDS = os.getenv("REMOVE_STOPWORDS", "false").lower() == "true"
     LOWERCASE = os.getenv("LOWERCASE", "true").lower() == "true"
 
+    # Query Expansion settings
+    QUERY_EXPANSION_ENABLED = os.getenv("QUERY_EXPANSION_ENABLED", "true").lower() == "true"
+    NUM_QUERY_VARIATIONS = int(os.getenv("NUM_QUERY_VARIATIONS", "3"))
+
     @classmethod
     def validate(cls):
         """Validate configuration parameters"""
@@ -60,6 +64,8 @@ class HybridSearchConfig:
             "tokenizer": cls.TOKENIZER,
             "remove_stopwords": cls.REMOVE_STOPWORDS,
             "lowercase": cls.LOWERCASE,
+            "query_expansion_enabled": cls.QUERY_EXPANSION_ENABLED,
+            "num_query_variations": cls.NUM_QUERY_VARIATIONS,
         }
 
 
