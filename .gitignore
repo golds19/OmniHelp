@@ -116,6 +116,8 @@ data/
 
 # notes
 *.md
+notes/
+notebooks/
 
 # notebooks
 *.ipynb

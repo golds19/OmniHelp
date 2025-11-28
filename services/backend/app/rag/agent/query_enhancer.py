@@ -5,7 +5,7 @@ Query expansion/enhancement utilities for improving retrieval.
 from typing import List
 from langchain_core.language_models import BaseChatModel
 from langchain_core.prompts import ChatPromptTemplate
-from ..core.config import HybridSearchConfig
+from ..core.config import HybridSearchConfig, LLMConfig
 
 
 def enhance_query(query: str, llm: BaseChatModel, num_variations: int = None) -> List[str]:
@@ -157,7 +157,8 @@ if __name__ == "__main__":
     # Example usage
     from langchain_openai import ChatOpenAI
 
-    llm = ChatOpenAI(model="gpt-4", temperature=0.7)
+    # Use config for query enhancer model
+    llm = ChatOpenAI(model=LLMConfig.QUERY_ENHANCER_MODEL, temperature=LLMConfig.QUERY_ENHANCER_TEMPERATURE)
 
     # Test query expansion
     original = "main contributions"

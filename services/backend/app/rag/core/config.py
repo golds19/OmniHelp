@@ -7,6 +7,36 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+class LLMConfig:
+    """Configuration parameters for LLM models"""
+
+    # Main LLM model for RAG responses
+    LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")
+    LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.2"))
+
+    # Query enhancement LLM (can be different/cheaper model)
+    QUERY_ENHANCER_MODEL = os.getenv("QUERY_ENHANCER_MODEL", "gpt-4o-mini")
+    QUERY_ENHANCER_TEMPERATURE = float(os.getenv("QUERY_ENHANCER_TEMPERATURE", "0.7"))
+
+    @classmethod
+    def validate(cls):
+        """Validate LLM configuration parameters"""
+        assert 0 <= cls.LLM_TEMPERATURE <= 2, "LLM_TEMPERATURE must be between 0 and 2"
+        assert 0 <= cls.QUERY_ENHANCER_TEMPERATURE <= 2, "QUERY_ENHANCER_TEMPERATURE must be between 0 and 2"
+        assert cls.LLM_MODEL, "LLM_MODEL must be specified"
+        assert cls.QUERY_ENHANCER_MODEL, "QUERY_ENHANCER_MODEL must be specified"
+
+    @classmethod
+    def get_config_dict(cls):
+        """Get configuration as dictionary"""
+        return {
+            "llm_model": cls.LLM_MODEL,
+            "llm_temperature": cls.LLM_TEMPERATURE,
+            "query_enhancer_model": cls.QUERY_ENHANCER_MODEL,
+            "query_enhancer_temperature": cls.QUERY_ENHANCER_TEMPERATURE,
+        }
+
+
 class HybridSearchConfig:
     """Configuration parameters for hybrid search"""
 
@@ -70,4 +100,5 @@ class HybridSearchConfig:
 
 
 # Validate configuration on import
+LLMConfig.validate()
 HybridSearchConfig.validate()

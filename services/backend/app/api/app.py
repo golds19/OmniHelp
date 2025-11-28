@@ -11,6 +11,7 @@ from app.rag.core.data_ingestion import DataEmbedding
 from app.rag.core.vectorstore import VectorStore
 from app.rag.core.rag_pipeline import MultiModalRAG
 from app.rag.core.rag_manager import MultiModalRAGSystem
+from app.rag.core.config import LLMConfig
 from app.rag.agent.graph_builder import run_agentic_rag, stream_agentic_rag
 from langchain_openai import ChatOpenAI
 from dotenv import load_dotenv
@@ -32,8 +33,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize OpenAI Chat model
-llm = ChatOpenAI(model="gpt-4.1-mini", temperature=0.2)
+# Initialize OpenAI Chat model from config
+llm = ChatOpenAI(model=LLMConfig.LLM_MODEL, temperature=LLMConfig.LLM_TEMPERATURE)
 
 # Store vectorstore and image data store in memory (for non-agentic RAG)
 vectorstore = None
