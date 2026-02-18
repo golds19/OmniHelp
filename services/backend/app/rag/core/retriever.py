@@ -1,11 +1,11 @@
 from dataclasses import dataclass
 from typing import Dict, Optional
-from .data_ingestion import CLIPEmbedder
-from langchain.schema.messages import HumanMessage
 from langchain_community.vectorstores import FAISS
 from langchain_community.retrievers import BM25Retriever
+from .embedder import get_embedder
 from .hybrid_retriever import HybridMultiModalRetrieval
 from .config import HybridSearchConfig
+from .utils import create_multimodal_message
 
 
 @dataclass
@@ -23,7 +23,7 @@ class MultiModalRetrieval:
 
     def __post_init__(self):
         """Initialize the CLIPEmbedder instance after dataclass initialization."""
-        self.embedder = CLIPEmbedder()
+        self.embedder = get_embedder()
 
     def retrieve_multimodal(self):
         """
@@ -46,13 +46,12 @@ class MultiModalRetrieval:
             return hybrid_retriever.retrieve_multimodal()
         else:
             # Fallback to dense-only search
-            query_embedding = self.embedder.embed_text(self.query)
+            query_embedding = self.embedder.embed_text(self.query).tolist()
             results = self.vectorStore.similarity_search_by_vector(
                 embedding=query_embedding,
                 k=self.k
             )
             return results
-    
 
     def create_multimodal_message(self, retrieved_docs):
         """
@@ -64,51 +63,4 @@ class MultiModalRetrieval:
         Returns:
             HumanMessage: Formatted message for the LLM
         """
-        content = []
-
-        # Add the query
-        content.append({
-            "type": "text",
-            "text": f"Question: {self.query}\n\nContext:\n"
-        })
-
-        # Separate text and image documents
-        text_docs = [doc for doc in retrieved_docs if doc.metadata.get("type") == "text"]
-        image_docs = [doc for doc in retrieved_docs if doc.metadata.get("type") == "image"]
-
-        # Add text context
-        if text_docs:
-            text_context = "\n\n".join([
-                f"[Page {doc.metadata['page']}]: {doc.page_content}"
-                for doc in text_docs
-            ])
-            content.append({
-                "type": "text",
-                "text": f"Text excerpts:\n{text_context}\n"
-            })
-
-        # Add images context
-        for doc in image_docs:
-            image_id = doc.metadata.get("image_id")
-            if image_id and image_id in self.image_data_store:
-                content.append({
-                    "type": "text",
-                    "text": f"\n[Image from page {doc.metadata['page']}]\n"
-                })
-                content.append({
-                    "type": "image_url",
-                    "image_url": {
-                        "url": f"data:image/png;base64,{self.image_data_store[image_id]}",
-                        "alt_text": f"Image from page {doc.metadata['page']}"
-                    }
-                })
-
-        # Add instruction
-        content.append({
-            "type": "text",
-            "text": "\nAnswer the question based on the provided context. If the context does not contain the answer, say 'I don't know'."
-        })
-
-        return HumanMessage(content=content)
-
-
+        return create_multimodal_message(self.query, retrieved_docs, self.image_data_store)

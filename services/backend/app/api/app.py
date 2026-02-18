@@ -1,33 +1,27 @@
+import logging
+from pathlib import Path
+import shutil
+
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
-import os
-from pathlib import Path
-import shutil
-from typing import Optional
+from langchain_openai import ChatOpenAI
 
 from app.rag.core.data_ingestion import DataEmbedding
 from app.rag.core.vectorstore import VectorStore
 from app.rag.core.rag_pipeline import MultiModalRAG
 from app.rag.core.rag_manager import MultiModalRAGSystem
-from app.rag.core.config import LLMConfig
+from app.rag.core.config import LLMConfig, AppConfig
 from app.rag.agent.graph_builder import run_agentic_rag, stream_agentic_rag
-from langchain_openai import ChatOpenAI
-from dotenv import load_dotenv
 
-load_dotenv()
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Lifeforge RAG API")
 
-origins = [
-    "http://localhost",
-    "http://localhost:3000",
-]
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=AppConfig.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -36,8 +30,9 @@ app.add_middleware(
 # Initialize OpenAI Chat model from config
 llm = ChatOpenAI(model=LLMConfig.LLM_MODEL, temperature=LLMConfig.LLM_TEMPERATURE)
 
-# Store vectorstore and image data store in memory (for non-agentic RAG)
+# Store vectorstore, BM25 retriever, and image data store in memory (for non-agentic RAG)
 vectorstore = None
+bm25_retriever = None
 image_data_store = {}
 
 # Initialize Agentic RAG System (singleton)
@@ -56,33 +51,37 @@ async def ingest_document(file: UploadFile = File(...)):
     """
     Endpoint for ingesting PDF documents into the RAG system.
     """
-    global vectorstore, image_data_store
+    global vectorstore, bm25_retriever, image_data_store
     
     # Verify file is PDF
     if not file.filename.endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
     
     # Create temporary file to save the upload
-    temp_dir = Path("temp")
+    temp_dir = Path(AppConfig.TEMP_DIR)
     temp_dir.mkdir(exist_ok=True)
     temp_file = temp_dir / file.filename
-    
+
     try:
         # Save uploaded file
         with temp_file.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-        
+
         # Process and embed documents
         data_embedder = DataEmbedding(str(temp_file))
-        docs, embeddings, image_data_store = data_embedder.process_and_embedd_docs()
+        docs, embeddings, image_data_store, text_docs = data_embedder.process_and_embedd_docs()
 
-        # Create vector store using VectorStore class
+        # Create hybrid retrievers (FAISS + BM25) using VectorStore class
         vs = VectorStore(
             all_docs=docs,
             all_embeddings=embeddings,
-            image_data_store=image_data_store
+            image_data_store=image_data_store,
+            text_docs=text_docs
         )
-        vectorstore = vs.create_vectorstore()
+        hybrid_stores = vs.create_hybrid_retrievers()
+        vectorstore = hybrid_stores["faiss_store"]
+        bm25_retriever = hybrid_stores["bm25_retriever"]
+        image_data_store = hybrid_stores["image_data_store"]
         
         return JSONResponse(
             content={"message": f"Successfully processed {file.filename}"},
@@ -103,7 +102,7 @@ async def query_documents(query: Query):
     """
     Endpoint for querying the RAG system with questions.
     """
-    global vectorstore, image_data_store
+    global vectorstore, bm25_retriever, image_data_store
     
     if not vectorstore:
         raise HTTPException(
@@ -112,13 +111,14 @@ async def query_documents(query: Query):
         )
     
     try:
-        # Use the new MultiModalRAG class
+        # Use the new MultiModalRAG class with hybrid search support
         rag = MultiModalRAG(
             query=query.question,
             vectorStore=vectorstore,
             image_data_store=image_data_store,
             llm=llm,
-            k=5
+            k=5,
+            bm25_retriever=bm25_retriever
         )
         result = rag.generate()
 
@@ -150,7 +150,7 @@ async def ingest_document_agentic(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
 
     # Create temporary file to save the upload
-    temp_dir = Path("temp")
+    temp_dir = Path(AppConfig.TEMP_DIR)
     temp_dir.mkdir(exist_ok=True)
     temp_file = temp_dir / file.filename
 

@@ -26,8 +26,8 @@ def build_agentic_rag_graph(
     Returns:
         Compiled graph ready for invocation
     """
-    # Create tools
-    tools = get_agent_tools(rag_system)
+    # Create tools (pass LLM for query enhancement tools)
+    tools = get_agent_tools(rag_system, llm)
 
     # Create agent executor
     agent_executor = create_agent_executor(llm, tools)
@@ -109,7 +109,7 @@ async def stream_agentic_rag(
         rag_system: The initialized MultiModalRAGSystem
 
     Yields:
-        String tokens as they are generated
+    String tokens as they are generated
     """
     graph = build_agentic_rag_graph(llm, rag_system)
 

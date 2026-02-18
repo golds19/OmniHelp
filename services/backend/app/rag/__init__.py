@@ -12,7 +12,7 @@ from .core import (
 )
 from .agent import (
     AgenticRAGState,
-    create_react_prompt,
+    create_agent_prompt,
     create_agent_executor,
     agent_node,
     build_agentic_rag_graph,
@@ -33,7 +33,7 @@ __all__ = [
     "MultiModalRAGSystem",
     # Agent
     "AgenticRAGState",
-    "create_react_prompt",
+    "create_agent_prompt",
     "create_agent_executor",
     "agent_node",
     "build_agentic_rag_graph",

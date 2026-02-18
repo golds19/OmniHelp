@@ -1,20 +1,16 @@
 """
 Agent tools for the Agentic RAG system.
 """
-
-from langchain.tools import Tool
+from typing import Optional, List
+from langchain_core.tools import StructuredTool
 from langchain_core.language_models import BaseChatModel
 from ..core.rag_manager import MultiModalRAGSystem
 from ..core.config import HybridSearchConfig
-from .query_enhancer import enhance_query, decompose_query, generate_hypothetical_answer
-import asyncio
-from typing import Optional, List
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
-from contextlib import AsyncExitStack
+from ..core.utils import filter_documents_by_type
+from .query_enhancer import enhance_query, decompose_query
 
 
-def create_rag_retriever_tool(rag_system: MultiModalRAGSystem) -> Tool:
+def create_rag_retriever_tool(rag_system: MultiModalRAGSystem) -> StructuredTool:
     """
     Create a LangChain tool for the multimodal RAG retriever.
 
@@ -52,7 +48,7 @@ def create_rag_retriever_tool(rag_system: MultiModalRAGSystem) -> Tool:
             context_parts = []
 
             # Add text chunks
-            text_docs = [doc for doc in retrieved_docs if doc.metadata.get("type") == "text"]
+            text_docs, image_docs = filter_documents_by_type(retrieved_docs)
             if text_docs:
                 context_parts.append("Text Content:")
                 for doc in text_docs:
@@ -61,7 +57,6 @@ def create_rag_retriever_tool(rag_system: MultiModalRAGSystem) -> Tool:
                     context_parts.append(f"\n[Page {page}]: {content}")
 
             # Add image references
-            image_docs = [doc for doc in retrieved_docs if doc.metadata.get("type") == "image"]
             if image_docs:
                 context_parts.append("\n\nImages Found:")
                 for doc in image_docs:
@@ -81,9 +76,9 @@ def create_rag_retriever_tool(rag_system: MultiModalRAGSystem) -> Tool:
         except Exception as e:
             return f"Error searching document: {str(e)}"
 
-    return Tool(
-        name="search_document",
+    return StructuredTool.from_function(
         func=search_document,
+        name="search_document",
         description=(
             "Useful for answering questions about the loaded PDF document. "
             "This tool can find information from both text and images in the document. "
@@ -93,31 +88,8 @@ def create_rag_retriever_tool(rag_system: MultiModalRAGSystem) -> Tool:
         )
     )
 
-# basic initialization of notion mcp server
-# async def connect_to_notion_server(command, args, notion_api_key):
-#     """
-#     This is a Notion tool for
-#     """
-#     # initialize the server
-#     server_params = StdioServerParameters(
-#         command=command,
-#         args=[args],
-#         env=notion_api_key
-#     )
 
-#     stdio_transport = await AsyncExitStack().enter_async_context(stdio_client(server_params))
-#     stdio, write = stdio_transport
-#     Optional[ClientSession] = await AsyncExitStack().enter_async_context(ClientSession(stdio, write))
-
-#     await Optional[ClientSession].initialize()
-
-#     # List the available tools
-#     response = await Optional[ClientSession].list_tools()
-#     tools = response.tools
-#     print(f"\nConnected to server with tools:", [tool.name for tool in tools])
-
-
-def create_query_enhancer_tool(llm: BaseChatModel) -> Tool:
+def create_query_enhancer_tool(llm: BaseChatModel) -> StructuredTool:
     """
     Create a LangChain tool for query expansion/enhancement.
 
@@ -175,9 +147,9 @@ def create_query_enhancer_tool(llm: BaseChatModel) -> Tool:
         except Exception as e:
             return f"Error expanding query: {str(e)}"
 
-    return Tool(
-        name="expand_query",
+    return StructuredTool.from_function(
         func=expand_query,
+        name="expand_query",
         description=(
             "Useful for expanding vague or ambiguous queries into multiple specific variations. "
             "This improves search recall by generating alternative ways to phrase the same question. "
@@ -188,7 +160,7 @@ def create_query_enhancer_tool(llm: BaseChatModel) -> Tool:
     )
 
 
-def create_query_decomposer_tool(llm: BaseChatModel) -> Tool:
+def create_query_decomposer_tool(llm: BaseChatModel) -> StructuredTool:
     """
     Create a LangChain tool for query decomposition.
 
@@ -244,9 +216,9 @@ def create_query_decomposer_tool(llm: BaseChatModel) -> Tool:
         except Exception as e:
             return f"Error decomposing query: {str(e)}"
 
-    return Tool(
-        name="decompose_query",
+    return StructuredTool.from_function(
         func=decompose_complex_query,
+        name="decompose_query",
         description=(
             "Useful for breaking down complex, multi-part queries into simpler sub-queries. "
             "Use this when the question asks multiple things, requires comparison, or has multiple aspects. "

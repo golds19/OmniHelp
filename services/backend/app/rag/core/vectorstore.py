@@ -1,3 +1,4 @@
+import logging
 from dataclasses import dataclass
 from typing import List, Dict, Optional
 from langchain_community.vectorstores import FAISS
@@ -5,14 +6,16 @@ from langchain_community.retrievers import BM25Retriever
 from langchain_core.embeddings import Embeddings
 import numpy as np
 from .config import HybridSearchConfig
-from .data_ingestion import CLIPEmbedder
+from .embedder import get_embedder
+
+logger = logging.getLogger(__name__)
 
 
 class CLIPEmbeddingWrapper(Embeddings):
     """Wrapper to make CLIPEmbedder compatible with LangChain's Embeddings interface."""
 
     def __init__(self):
-        self.embedder = CLIPEmbedder()
+        self.embedder = get_embedder()
 
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
         """Embed a list of documents."""
@@ -62,7 +65,7 @@ class VectorStore:
             BM25Retriever: BM25 retriever instance
         """
         if not self.text_docs:
-            print("Warning: No text documents available for BM25 retriever")
+            logger.warning("No text documents available for BM25 retriever")
             return None
 
         bm25_retriever = BM25Retriever.from_documents(self.text_docs)
@@ -98,7 +101,3 @@ class VectorStore:
             FAISS: Vector store instance
         """
         return self.create_faiss_vectorstore()
-
-
-if __name__ == "__main__":
-    print("Testing")

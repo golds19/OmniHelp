@@ -1,74 +1,15 @@
 import os
-import torch
-import numpy as np
 import io
 import base64
+import logging
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from transformers import CLIPProcessor, CLIPModel
 from PIL import Image
-from .pdf_handler import load_pdf, split_pdf
 from langchain_core.documents import Document
+from .pdf_handler import load_pdf, split_pdf
+from .embedder import CLIPEmbedder, get_embedder
 
-
-@dataclass
-class CLIPEmbedder:
-    """
-    Encapsulates CLIP model and provides embedding functionality for text and images.
-    """
-    model_name: str = "openai/clip-vit-base-patch32"
-    model: CLIPModel = field(init=False)
-    processor: CLIPProcessor = field(init=False)
-
-    def __post_init__(self):
-        """Initialize the CLIP model and processor after dataclass initialization."""
-        self.model = CLIPModel.from_pretrained(self.model_name)
-        self.processor = CLIPProcessor.from_pretrained(self.model_name)
-        self.model.eval()
-
-    def embed_image(self, image_data):
-        """
-        Embed an image using the CLIP Model.
-
-        Args:
-            image_data: Either a file path string or a PIL Image object
-
-        Returns:
-            numpy.ndarray: Normalized image embedding vector
-        """
-        if isinstance(image_data, str):
-            image = Image.open(image_data).convert("RGB")
-        else:
-            image = image_data
-
-        inputs = self.processor(images=image, return_tensors="pt")
-        with torch.no_grad():
-            features = self.model.get_image_features(**inputs)
-            features = features / features.norm(dim=-1, keepdim=True)
-            return features.squeeze().numpy()
-
-    def embed_text(self, text: str):
-        """
-        Embed text using CLIP.
-
-        Args:
-            text: The text string to embed
-
-        Returns:
-            numpy.ndarray: Normalized text embedding vector
-        """
-        inputs = self.processor(
-            text=text,
-            return_tensors="pt",
-            padding=True,
-            truncation=True,
-            max_length=77
-        )
-        with torch.no_grad():
-            features = self.model.get_text_features(**inputs)
-            features = features / features.norm(dim=-1, keepdim=True)
-            return features.squeeze().numpy()
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -86,7 +27,7 @@ class DataEmbedding:
     def __post_init__(self):
         """Initialize the CLIPEmbedder instance after dataclass initialization."""
         if self.embedder is None:
-            self.embedder = CLIPEmbedder()
+            self.embedder = get_embedder()
 
     def process_pdf(self):
         doc = load_pdf(self.pdf_path)
@@ -144,11 +85,7 @@ class DataEmbedding:
                     img_doc = Document(page_content=f"[Image: {image_id}]", metadata={"page": i, "type": "image", "image_id": image_id})
                     self.all_docs.append(img_doc)
                 except Exception as e:
-                    print(f"Error processing image on page {i}, image {img_index}: {e}")
+                    logger.warning(f"Error processing image on page {i}, image {img_index}: {e}")
                     continue
         doc.close()
         return self.all_docs, self.all_embeddings, self.image_data_store, self.text_docs
-
-
-if __name__ == "__main__":
-    print("testing")

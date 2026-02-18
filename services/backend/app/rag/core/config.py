@@ -1,10 +1,38 @@
 """
-Configuration for Hybrid Search (BM25 + Dense Embeddings)
+Centralized configuration for the RAG system.
 """
 import os
+from typing import List
 from dotenv import load_dotenv
 
 load_dotenv()
+
+
+class AppConfig:
+    """Application-level configuration"""
+
+    # CORS settings
+    CORS_ORIGINS: List[str] = os.getenv(
+        "CORS_ORIGINS",
+        "http://localhost,http://localhost:3000"
+    ).split(",")
+
+    # Temporary directory for file uploads
+    TEMP_DIR: str = os.getenv("TEMP_DIR", "temp")
+
+
+class PDFConfig:
+    """Configuration for PDF processing"""
+
+    CHUNK_SIZE: int = int(os.getenv("PDF_CHUNK_SIZE", "1000"))
+    CHUNK_OVERLAP: int = int(os.getenv("PDF_CHUNK_OVERLAP", "200"))
+
+    @classmethod
+    def validate(cls):
+        """Validate PDF configuration parameters"""
+        assert cls.CHUNK_SIZE > 0, "PDF_CHUNK_SIZE must be positive"
+        assert cls.CHUNK_OVERLAP >= 0, "PDF_CHUNK_OVERLAP must be non-negative"
+        assert cls.CHUNK_OVERLAP < cls.CHUNK_SIZE, "PDF_CHUNK_OVERLAP must be less than PDF_CHUNK_SIZE"
 
 
 class LLMConfig:
@@ -100,5 +128,6 @@ class HybridSearchConfig:
 
 
 # Validate configuration on import
+PDFConfig.validate()
 LLMConfig.validate()
 HybridSearchConfig.validate()

@@ -2,7 +2,7 @@
 Singleton class to manage the multimodal RAG system state.
 This ensures we don't rebuild embeddings on every query.
 """
-
+import logging
 from typing import Dict, Optional
 from langchain_openai import ChatOpenAI
 from langchain_community.vectorstores import FAISS
@@ -11,6 +11,9 @@ from .data_ingestion import DataEmbedding
 from .vectorstore import VectorStore
 from .config import HybridSearchConfig
 from .retriever import MultiModalRetrieval
+from .utils import filter_documents_by_type
+
+logger = logging.getLogger(__name__)
 
 
 class MultiModalRAGSystem:
@@ -35,10 +38,10 @@ class MultiModalRAGSystem:
             vision_llm: Optional vision LLM for multimodal processing
         """
         if self._initialized:
-            print("RAG system already initialized. Skipping...")
-            return
+            logger.info("RAG system already initialized. Resetting for new document...")
+            self.reset()
 
-        print(f"Initializing multimodal RAG system with {pdf_path}...")
+        logger.info(f"Initializing multimodal RAG system with {pdf_path}...")
 
         # Load and embed data
         data_embedder = DataEmbedding(pdf_path=pdf_path)
@@ -55,22 +58,22 @@ class MultiModalRAGSystem:
 
         # Create hybrid retrievers if enabled
         if HybridSearchConfig.HYBRID_SEARCH_ENABLED:
-            print("📊 Creating hybrid search retrievers (BM25 + FAISS)...")
+            logger.info("Creating hybrid search retrievers (BM25 + FAISS)...")
             hybrid_stores = vs.create_hybrid_retrievers()
             self.vectorStore = hybrid_stores["faiss_store"]
             self.bm25_retriever = hybrid_stores["bm25_retriever"]
-            print(f"✓ Hybrid search enabled (BM25 weight: {HybridSearchConfig.BM25_WEIGHT}, Dense weight: {HybridSearchConfig.DENSE_WEIGHT})")
+            logger.info(f"Hybrid search enabled (BM25 weight: {HybridSearchConfig.BM25_WEIGHT}, Dense weight: {HybridSearchConfig.DENSE_WEIGHT})")
         else:
-            print("📊 Creating FAISS vector store only...")
+            logger.info("Creating FAISS vector store only...")
             self.vectorStore = vs.create_vectorstore()
             self.bm25_retriever = None
-            print("✓ Dense-only search enabled")
+            logger.info("Dense-only search enabled")
 
         # Store vision LLM
         self.vision_llm = vision_llm
 
         self._initialized = True
-        print(f"✓ RAG system initialized with {len(self.all_docs)} documents ({len(self.text_docs)} text chunks)")
+        logger.info(f"RAG system initialized with {len(self.all_docs)} documents ({len(self.text_docs)} text chunks)")
 
     def query(self, question: str, k: int = 5, use_hybrid: bool = True) -> Dict:
         """
@@ -105,14 +108,13 @@ class MultiModalRAGSystem:
             {"page": doc.metadata["page"], "type": doc.metadata["type"]}
             for doc in retrieved_docs
         ]
-        num_images = len([doc for doc in retrieved_docs if doc.metadata.get("type") == "image"])
-        num_text_chunks = len([doc for doc in retrieved_docs if doc.metadata.get("type") == "text"])
+        text_docs, image_docs = filter_documents_by_type(retrieved_docs)
 
         return {
             "retrieved_docs": retrieved_docs,
             "sources": sources,
-            "num_images": num_images,
-            "num_text_chunks": num_text_chunks
+            "num_images": len(image_docs),
+            "num_text_chunks": len(text_docs)
         }
 
     def is_initialized(self) -> bool:
@@ -129,4 +131,4 @@ class MultiModalRAGSystem:
         self.text_docs = []
         self.image_data_store = {}
         self.vision_llm = None
-        print("RAG system reset.")
+        logger.info("RAG system reset.")

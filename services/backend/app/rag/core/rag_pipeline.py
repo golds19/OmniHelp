@@ -1,14 +1,13 @@
+import logging
 from dataclasses import dataclass
 from typing import Dict, Optional
 from .retriever import MultiModalRetrieval
+from .utils import filter_documents_by_type
 from langchain_openai import ChatOpenAI
 from langchain_community.vectorstores import FAISS
 from langchain_community.retrievers import BM25Retriever
-from dotenv import load_dotenv
 
-import os
-
-load_dotenv()
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -50,29 +49,15 @@ class MultiModalRAG:
         # Get response from LLM
         response = self.llm.invoke([message])
 
-        # Print retrieved context info
-        print(f"\nRetrieved {len(context_docs)} documents for context")
-        for doc in context_docs:
-            doc_type = doc.metadata.get("type", "unknown")
-            page = doc.metadata.get("page", "N/A")
-            if doc_type == "text":
-                preview = doc.page_content[:100].replace("\n", " ") + ("..." if len(doc.page_content) > 100 else doc.page_content)
-                print(f"- [Text] Page {page}: {preview}")
-            else:
-                image_id = doc.metadata.get("image_id", "N/A")
-                print(f"- [Image] Page {page}, ID: {image_id}")
-        print("\n")
+        # Log retrieved context info
+        logger.debug(f"Retrieved {len(context_docs)} documents for context")
 
         # Return both response and metadata
+        text_docs, image_docs = filter_documents_by_type(context_docs)
         return {
             "answer": response.content,
             "sources": [{"page": doc.metadata["page"], "type": doc.metadata["type"]}
                        for doc in context_docs],
-            "num_images": len([doc for doc in context_docs if doc.metadata.get("type") == "image"]),
-            "num_text_chunks": len([doc for doc in context_docs if doc.metadata.get("type") == "text"])
+            "num_images": len(image_docs),
+            "num_text_chunks": len(text_docs)
         }
-
-
-
-if __name__ == "__main__":
-    print("test")

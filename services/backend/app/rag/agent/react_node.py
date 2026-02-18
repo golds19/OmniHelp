@@ -1,59 +1,43 @@
 """
-ReAct agent node for the Agentic RAG system.
+Tool-calling agent node for the Agentic RAG system.
+Uses LangChain's tool-calling agent for better compatibility with modern LLMs.
 """
 
+import re
 from typing import List
 from langchain_openai import ChatOpenAI
-from langchain.agents import create_react_agent, AgentExecutor
-from langchain.prompts import PromptTemplate
-from langchain.tools import Tool
-from langchain_core.messages import HumanMessage
+from langchain.agents import AgentExecutor, create_tool_calling_agent
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.tools import BaseTool
 from .rag_state import AgenticRAGState
 
 
-def create_react_prompt() -> PromptTemplate:
+def create_agent_prompt() -> ChatPromptTemplate:
     """
-    Create the ReAct prompt template for the agent.
+    Create the prompt template for the tool-calling agent.
 
     Returns:
-        PromptTemplate: Prompt template for ReAct agent
+        ChatPromptTemplate: Prompt template for the agent
     """
-    template = """You are an intelligent assistant helping users understand PDF documents.
+    return ChatPromptTemplate.from_messages([
+        ("system", """You are an intelligent assistant helping users understand PDF documents.
 You have access to tools that can search through document content including text and images.
 
-Answer the following questions as best you can. You have access to the following tools:
-
-{tools}
-
-Use the following format:
-
-Question: the input question you must answer
-Thought: you should always think about what to do
-Action: the action to take, should be one of [{tool_names}]
-Action Input: the input to the action
-Observation: the result of the action
-... (this Thought/Action/Action Input/Observation can repeat N times)
-Thought: I now know the final answer
-Final Answer: the final answer to the original input question
-
 Important guidelines:
-- Always search the document first before answering
+- Always search the document first before answering questions
 - Use specific quotes from the document when possible
-- Cite page numbers in your answer
-- If you find images, mention them in your answer
+- Cite page numbers in your answer (e.g., "According to page 3...")
+- If you find relevant images, mention them in your answer
 - Be concise but thorough
-
-Begin!
-
-Question: {input}
-Thought: {agent_scratchpad}"""
-
-    return PromptTemplate.from_template(template)
+- If the document doesn't contain the answer, say so clearly"""),
+        ("human", "{input}"),
+        MessagesPlaceholder(variable_name="agent_scratchpad"),
+    ])
 
 
-def create_agent_executor(llm: ChatOpenAI, tools: List[Tool]) -> AgentExecutor:
+def create_agent_executor(llm: ChatOpenAI, tools: List[BaseTool]) -> AgentExecutor:
     """
-    Create the ReAct agent executor.
+    Create the tool-calling agent executor.
 
     Args:
         llm: The language model to use
@@ -62,9 +46,9 @@ def create_agent_executor(llm: ChatOpenAI, tools: List[Tool]) -> AgentExecutor:
     Returns:
         AgentExecutor: Configured agent executor
     """
-    prompt = create_react_prompt()
+    prompt = create_agent_prompt()
 
-    agent = create_react_agent(
+    agent = create_tool_calling_agent(
         llm=llm,
         tools=tools,
         prompt=prompt
@@ -108,12 +92,35 @@ def agent_node(state: AgenticRAGState, agent_executor: AgentExecutor) -> Agentic
     answer = result.get("output", "")
     intermediate_steps = result.get("intermediate_steps", [])
 
+    # Extract sources from intermediate steps (tool outputs)
+    sources = []
+    num_images = 0
+    num_text_chunks = 0
+
+    for action, observation in intermediate_steps:
+        # Parse the observation for page references
+        if isinstance(observation, str):
+            # Count text chunks and images from the observation
+            if "Text Content:" in observation:
+                # Count page references in text content
+                page_matches = re.findall(r'\[Page (\d+)\]:', observation)
+                for page in page_matches:
+                    sources.append({"page": int(page), "type": "text"})
+                    num_text_chunks += 1
+
+            if "Images Found:" in observation:
+                # Count image references
+                image_matches = re.findall(r'\[Page (\d+)\]: Image', observation)
+                for page in image_matches:
+                    sources.append({"page": int(page), "type": "image"})
+                    num_images += 1
+
     # Update state
     return {
         "messages": state["messages"],
         "answer": answer,
         "retrieved_docs": state.get("retrieved_docs", []),
-        "sources": state.get("sources", []),
-        "num_images": state.get("num_images", 0),
-        "num_text_chunks": state.get("num_text_chunks", 0)
+        "sources": sources if sources else state.get("sources", []),
+        "num_images": num_images if num_images else state.get("num_images", 0),
+        "num_text_chunks": num_text_chunks if num_text_chunks else state.get("num_text_chunks", 0)
     }
