@@ -1,0 +1,11 @@
+# Normalize all text files to LF in the repository
+* text=auto eol=lf
+
+# Explicitly mark binary files — never touch their line endings
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.ico  binary
+*.pdf  binary
+*.woff binary
+*.woff2 binary

@@ -1,34 +1,33 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useDocumentIngest } from "./hooks/useDocumentIngest";
 import { useDocumentQuery } from "./hooks/useDocumentQuery";
-import { ThemeToggle } from "./components/ThemeToggle";
 import { Header } from "./components/Header";
 import { FileUploadSection } from "./components/FileUploadSection";
 import { QuerySection } from "./components/QuerySection";
 import { ResponseDisplay } from "./components/ResponseDisplay";
-import { themeClasses } from "./utils/theme";
+import { API_BASE_URL } from "./utils/constants";
+import type { QueryResponse } from "@/types/api";
 
-interface QueryResponse {
-  answer: string;
-  sources: Array<{ page: number; type: string }>;
-  num_images: number;
-  num_text_chunks: number;
-  agent_type?: string;
-}
+type BackendStatus = 'connecting' | 'online' | 'offline';
 
 export default function TestPost() {
   const [input, setInput] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [metadata, setMetadata] = useState<QueryResponse | null>(null);
-  const [isDark, setIsDark] = useState(false);
+  const [backendStatus, setBackendStatus] = useState<BackendStatus>('connecting');
+
+  useEffect(() => {
+    fetch(`${API_BASE_URL}/ping`, { signal: AbortSignal.timeout(5000) })
+      .then((res) => setBackendStatus(res.ok ? 'online' : 'offline'))
+      .catch(() => setBackendStatus('offline'));
+  }, []);
 
   const { ingested, ingestStatus, isPending, ingestDocument, resetIngestStatus } = useDocumentIngest();
   const { response, isStreaming, queryDocument, stopQuery, clearResponse } = useDocumentQuery();
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0] || null;
-    console.log("📁 File selected:", selectedFile?.name);
     setFile(selectedFile);
     resetIngestStatus();
     clearResponse();
@@ -48,58 +47,54 @@ export default function TestPost() {
     await queryDocument(input);
   };
 
+  if (backendStatus === 'connecting') {
+    return (
+      <main className="min-h-screen bg-neutral-50 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-5 w-5 rounded-full border-2 border-neutral-200 border-t-indigo-600 animate-spin" />
+          <p className="text-sm text-neutral-400">Connecting to backend...</p>
+        </div>
+      </main>
+    );
+  }
+
   return (
-    <main className={`min-h-screen flex flex-col items-center justify-center p-8 transition-colors ${themeClasses.background(isDark)}`}>
-      <div className="w-full max-w-4xl">
-        <ThemeToggle isDark={isDark} onToggle={() => setIsDark(!isDark)} />
-
-        <Header isDark={isDark} />
-
-        <div className={`rounded-2xl shadow-xl p-8 space-y-8 ${themeClasses.card(isDark)}`}>
-          <FileUploadSection
-            file={file}
-            isDark={isDark}
-            isPending={isPending}
-            ingested={ingested}
-            ingestStatus={ingestStatus}
-            onFileChange={handleFileChange}
-            onIngest={handleIngest}
-          />
-
-          {/* Divider */}
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <div className={`w-full border-t ${themeClasses.border(isDark)}`}></div>
-            </div>
-            <div className="relative flex justify-center text-sm">
-              <span className={`px-4 ${themeClasses.divider(isDark)}`}>Then ask questions</span>
-            </div>
+    <main className="min-h-screen bg-neutral-50 flex justify-center pt-20 pb-16 px-6">
+      <div className="w-full max-w-2xl space-y-10">
+        {backendStatus === 'offline' && (
+          <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+            <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-amber-500" />
+            Backend unavailable — requests may fail
           </div>
+        )}
 
-          <QuerySection
-            input={input}
-            isDark={isDark}
-            isPending={isPending}
-            ingested={ingested}
-            isStreaming={isStreaming}
-            onInputChange={setInput}
-            onQuery={handleQuery}
-            onStop={stopQuery}
-          />
+        <Header />
 
-          <ResponseDisplay
-            response={response}
-            metadata={metadata}
-            isDark={isDark}
-            isStreaming={isStreaming}
-            ingested={ingested}
-          />
-        </div>
+        <FileUploadSection
+          file={file}
+          isPending={isPending}
+          ingested={ingested}
+          ingestStatus={ingestStatus}
+          onFileChange={handleFileChange}
+          onIngest={handleIngest}
+        />
 
-        {/* Footer */}
-        <div className={`text-center mt-8 text-sm ${themeClasses.text.tertiary(isDark)}`}>
-          Powered by Agentic RAG with ReAct Agent & CLIP Embeddings
-        </div>
+        <QuerySection
+          input={input}
+          isPending={isPending}
+          ingested={ingested}
+          isStreaming={isStreaming}
+          onInputChange={setInput}
+          onQuery={handleQuery}
+          onStop={stopQuery}
+        />
+
+        <ResponseDisplay
+          response={response}
+          metadata={metadata}
+          isStreaming={isStreaming}
+          ingested={ingested}
+        />
       </div>
     </main>
   );

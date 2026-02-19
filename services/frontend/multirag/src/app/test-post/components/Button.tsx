@@ -8,9 +8,15 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variantStyles = {
-  primary: 'bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800',
-  success: 'bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800',
-  danger: 'bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800',
+  primary: 'bg-indigo-600 text-white hover:bg-indigo-700 border border-indigo-600',
+  success: 'bg-indigo-600 text-white hover:bg-indigo-700 border border-indigo-600',
+  danger: 'bg-white text-neutral-700 border border-neutral-300 hover:bg-neutral-50',
+};
+
+const spinnerStyles = {
+  primary: 'text-white',
+  success: 'text-white',
+  danger: 'text-neutral-600',
 };
 
 export const Button = ({
@@ -24,13 +30,13 @@ export const Button = ({
 }: ButtonProps) => {
   return (
     <button
-      className={`px-8 py-4 text-white rounded-lg font-medium shadow-md hover:shadow-lg transition-all disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed disabled:shadow-none ${variantStyles[variant]} ${className}`}
+      className={`px-6 py-2.5 rounded-lg font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${variantStyles[variant]} ${className}`}
       disabled={disabled || isLoading}
       {...props}
     >
       {isLoading ? (
         <span className="flex items-center gap-2">
-          <SpinnerIcon className="animate-spin h-5 w-5" />
+          <SpinnerIcon className={`animate-spin h-4 w-4 ${spinnerStyles[variant]}`} />
           {loadingText || 'Loading...'}
         </span>
       ) : (
