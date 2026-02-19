@@ -1,0 +1,29 @@
+// Jest setup file for React Testing Library
+import '@testing-library/jest-dom';
+
+// Mock fetch globally
+global.fetch = jest.fn();
+
+// Mock ResizeObserver
+global.ResizeObserver = class ResizeObserver {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+};
+
+// Mock requestAnimationFrame
+global.requestAnimationFrame = (callback) => setTimeout(callback, 0);
+global.cancelAnimationFrame = (id) => clearTimeout(id);
+
+// Mock IntersectionObserver
+global.IntersectionObserver = class IntersectionObserver {
+  constructor() {}
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+};
+
+// Reset mocks between tests
+beforeEach(() => {
+  jest.clearAllMocks();
+});
