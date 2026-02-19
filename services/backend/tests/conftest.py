@@ -2,6 +2,9 @@
 Shared pytest fixtures for RAG system tests.
 Provides mock embedders, documents, and retrievers for testing without GPU dependencies.
 """
+import os
+os.environ.setdefault("OPENAI_API_KEY", "sk-test-key-placeholder")
+
 import pytest
 import numpy as np
 from unittest.mock import MagicMock, patch
@@ -187,6 +190,7 @@ def app_client():
     app_module.vectorstore = None
     app_module.bm25_retriever = None
     app_module.image_data_store = {}
+    app_module.agentic_rag_system.reset()
 
     return TestClient(app)
 
