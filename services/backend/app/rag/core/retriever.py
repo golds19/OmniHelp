@@ -31,7 +31,9 @@ class MultiModalRetrieval:
         Automatically chooses between hybrid and dense-only based on configuration.
 
         Returns:
-            List of retrieved documents
+            Dict with keys:
+              - "docs": List[Document]
+              - "top_similarity": float in [0, 1]
         """
         # Use hybrid search if enabled and BM25 retriever is available
         if self.use_hybrid and HybridSearchConfig.HYBRID_SEARCH_ENABLED and self.bm25_retriever is not None:
@@ -47,11 +49,13 @@ class MultiModalRetrieval:
         else:
             # Fallback to dense-only search
             query_embedding = self.embedder.embed_text(self.query).tolist()
-            results = self.vectorStore.similarity_search_by_vector(
+            scored = self.vectorStore.similarity_search_with_score_by_vector(
                 embedding=query_embedding,
                 k=self.k
             )
-            return results
+            docs = [doc for doc, _ in scored]
+            top_similarity = float(1 / (1 + scored[0][1])) if scored else 0.0
+            return {"docs": docs, "top_similarity": top_similarity}
 
     def create_multimodal_message(self, retrieved_docs):
         """

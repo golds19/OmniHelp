@@ -97,6 +97,9 @@ class HybridSearchConfig:
     QUERY_EXPANSION_ENABLED = os.getenv("QUERY_EXPANSION_ENABLED", "true").lower() == "true"
     NUM_QUERY_VARIATIONS = int(os.getenv("NUM_QUERY_VARIATIONS", "3"))
 
+    # Similarity threshold below which queries are rejected as out-of-context
+    MIN_SIMILARITY_THRESHOLD: float = float(os.getenv("MIN_SIMILARITY_THRESHOLD", "0.3"))
+
     @classmethod
     def validate(cls):
         """Validate configuration parameters"""
@@ -105,6 +108,7 @@ class HybridSearchConfig:
         assert cls.K_TOTAL > 0, "K_TOTAL must be positive"
         assert cls.K_BM25_CANDIDATES >= cls.K_TOTAL, "K_BM25_CANDIDATES should be >= K_TOTAL"
         assert cls.K_DENSE_CANDIDATES >= cls.K_TOTAL, "K_DENSE_CANDIDATES should be >= K_TOTAL"
+        assert 0 <= cls.MIN_SIMILARITY_THRESHOLD <= 1, "MIN_SIMILARITY_THRESHOLD must be between 0 and 1"
 
     @classmethod
     def get_config_dict(cls):
@@ -124,6 +128,7 @@ class HybridSearchConfig:
             "lowercase": cls.LOWERCASE,
             "query_expansion_enabled": cls.QUERY_EXPANSION_ENABLED,
             "num_query_variations": cls.NUM_QUERY_VARIATIONS,
+            "min_similarity_threshold": cls.MIN_SIMILARITY_THRESHOLD,
         }
 
 

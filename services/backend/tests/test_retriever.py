@@ -43,8 +43,10 @@ class TestMultiModalRetrieval:
 
             # Should still return results from FAISS
             assert results is not None
-            assert len(results) <= 3
-            mock_faiss_vectorstore.similarity_search_by_vector.assert_called_once()
+            assert "docs" in results
+            assert "top_similarity" in results
+            assert len(results["docs"]) <= 3
+            mock_faiss_vectorstore.similarity_search_with_score_by_vector.assert_called_once()
 
     def test_retrieval_respects_k_parameter(
         self, mock_faiss_vectorstore, sample_image_data_store
@@ -58,7 +60,7 @@ class TestMultiModalRetrieval:
             from app.rag.core.retriever import MultiModalRetrieval
 
             for k in [1, 3, 5]:
-                mock_faiss_vectorstore.similarity_search_by_vector.reset_mock()
+                mock_faiss_vectorstore.similarity_search_with_score_by_vector.reset_mock()
 
                 retriever = MultiModalRetrieval(
                     query="test query",
@@ -72,7 +74,7 @@ class TestMultiModalRetrieval:
                 results = retriever.retrieve_multimodal()
 
                 # Verify k was passed to FAISS
-                call_kwargs = mock_faiss_vectorstore.similarity_search_by_vector.call_args[1]
+                call_kwargs = mock_faiss_vectorstore.similarity_search_with_score_by_vector.call_args[1]
                 assert call_kwargs['k'] == k
 
     def test_embedding_converted_to_list(
@@ -99,7 +101,7 @@ class TestMultiModalRetrieval:
             retriever.retrieve_multimodal()
 
             # Verify embedding was converted to list
-            call_kwargs = mock_faiss_vectorstore.similarity_search_by_vector.call_args[1]
+            call_kwargs = mock_faiss_vectorstore.similarity_search_with_score_by_vector.call_args[1]
             embedding_arg = call_kwargs['embedding']
             assert isinstance(embedding_arg, list)
             assert len(embedding_arg) == 512
@@ -178,7 +180,7 @@ class TestHybridMultiModalRetrieval:
             results = retriever.retrieve_hybrid()
 
             # Should fall back to dense-only (FAISS)
-            mock_faiss_vectorstore.similarity_search_by_vector.assert_called_once()
+            mock_faiss_vectorstore.similarity_search_with_score_by_vector.assert_called_once()
 
     def test_retrieve_multimodal_respects_hybrid_config(
         self, mock_faiss_vectorstore, mock_bm25_retriever, sample_image_data_store
@@ -208,7 +210,7 @@ class TestHybridMultiModalRetrieval:
             results = retriever.retrieve_multimodal()
 
             # Should use dense-only since hybrid is disabled
-            mock_faiss_vectorstore.similarity_search_by_vector.assert_called_once()
+            mock_faiss_vectorstore.similarity_search_with_score_by_vector.assert_called_once()
 
     def test_hybrid_limits_results_to_k(
         self, mock_faiss_vectorstore, mock_bm25_retriever, sample_image_data_store

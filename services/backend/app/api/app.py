@@ -1,4 +1,6 @@
+import json
 import logging
+import time
 from pathlib import Path
 import shutil
 
@@ -16,6 +18,23 @@ from app.rag.core.config import LLMConfig, AppConfig
 from app.rag.agent.graph_builder import run_agentic_rag, stream_agentic_rag
 
 logger = logging.getLogger(__name__)
+
+
+def _log_query(query: str, result: dict, latency_ms: float):
+    """Emit a structured JSON log line for every query."""
+    entry = {
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "query": query,
+        "answer_length": len(result.get("answer", "")),
+        "num_text_chunks": result.get("num_text_chunks", 0),
+        "num_images": result.get("num_images", 0),
+        "top_similarity": result.get("top_similarity", 0.0),
+        "confidence": result.get("confidence", 0.0),
+        "source_pages": [s["page"] for s in result.get("sources", [])],
+        "latency_ms": round(latency_ms, 1),
+    }
+    logger.info(f"QUERY_LOG {json.dumps(entry)}")
+
 
 app = FastAPI(title="Lifeforge RAG API")
 
@@ -120,18 +139,23 @@ async def query_documents(query: Query):
             k=5,
             bm25_retriever=bm25_retriever
         )
+        t0 = time.perf_counter()
         result = rag.generate()
+        latency_ms = (time.perf_counter() - t0) * 1000
+        _log_query(query.question, result, latency_ms)
 
         return JSONResponse(
             content={
                 "answer": result["answer"],
                 "sources": result["sources"],
                 "num_images": result["num_images"],
-                "num_text_chunks": result["num_text_chunks"]
+                "num_text_chunks": result["num_text_chunks"],
+                "confidence": result.get("confidence", 0.0),
+                "top_similarity": result.get("top_similarity", 0.0),
             },
             status_code=200
         )
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -196,11 +220,14 @@ async def query_documents_agentic(query: Query):
 
     try:
         # Run the agentic RAG workflow
+        t0 = time.perf_counter()
         result = run_agentic_rag(
             question=query.question,
             llm=llm,
             rag_system=agentic_rag_system
         )
+        latency_ms = (time.perf_counter() - t0) * 1000
+        _log_query(query.question, result, latency_ms)
 
         return JSONResponse(
             content={

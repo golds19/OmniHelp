@@ -94,7 +94,9 @@ class TestQueryEndpoint:
                 "answer": "Machine learning is a subset of AI.",
                 "sources": [{"page": 1, "type": "text"}],
                 "num_images": 0,
-                "num_text_chunks": 3
+                "num_text_chunks": 3,
+                "confidence": 0.75,
+                "top_similarity": 0.8,
             }
             MockRAG.return_value = mock_rag
 
@@ -111,11 +113,15 @@ class TestQueryEndpoint:
             assert "sources" in data
             assert "num_images" in data
             assert "num_text_chunks" in data
+            assert "confidence" in data
+            assert "top_similarity" in data
 
             assert isinstance(data["answer"], str)
             assert isinstance(data["sources"], list)
             assert isinstance(data["num_images"], int)
             assert isinstance(data["num_text_chunks"], int)
+            assert isinstance(data["confidence"], float)
+            assert isinstance(data["top_similarity"], float)
 
 
 class TestAgenticIngestEndpoint:

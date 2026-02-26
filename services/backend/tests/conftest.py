@@ -137,11 +137,16 @@ def mock_faiss_vectorstore(sample_documents, sample_embeddings):
         """Return top k documents (mocked)."""
         return sample_documents[:k]
 
+    def similarity_search_with_score_by_vector(embedding, k=5):
+        """Return top k (document, score) tuples with a fixed L2 distance of 0.25."""
+        return [(doc, 0.25) for doc in sample_documents[:k]]
+
     def similarity_search(query, k=5):
         """Return top k documents for text query."""
         return sample_documents[:k]
 
     mock_store.similarity_search_by_vector = MagicMock(side_effect=similarity_search_by_vector)
+    mock_store.similarity_search_with_score_by_vector = MagicMock(side_effect=similarity_search_with_score_by_vector)
     mock_store.similarity_search = MagicMock(side_effect=similarity_search)
     mock_store.as_retriever = MagicMock(return_value=MagicMock())
 

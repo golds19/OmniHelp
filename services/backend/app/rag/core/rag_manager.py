@@ -101,7 +101,9 @@ class MultiModalRAGSystem:
             bm25_retriever=self.bm25_retriever,
             use_hybrid=use_hybrid
         )
-        retrieved_docs = retriever.retrieve_multimodal()
+        retrieval_result = retriever.retrieve_multimodal()
+        retrieved_docs = retrieval_result["docs"]
+        top_similarity = retrieval_result["top_similarity"]
 
         # Prepare metadata
         sources = [
@@ -114,7 +116,8 @@ class MultiModalRAGSystem:
             "retrieved_docs": retrieved_docs,
             "sources": sources,
             "num_images": len(image_docs),
-            "num_text_chunks": len(text_docs)
+            "num_text_chunks": len(text_docs),
+            "top_similarity": top_similarity,
         }
 
     def is_initialized(self) -> bool:

@@ -1,9 +1,10 @@
 import logging
 from dataclasses import dataclass
-from typing import Dict, List
+from typing import Dict, List, Tuple
 from langchain_community.vectorstores import FAISS
 from langchain_community.retrievers import BM25Retriever
 from langchain.retrievers import EnsembleRetriever
+from langchain_core.documents import Document
 from .embedder import get_embedder
 from .config import HybridSearchConfig
 from .utils import create_multimodal_message
@@ -28,25 +29,22 @@ class HybridMultiModalRetrieval:
         """Initialize the CLIPEmbedder instance after dataclass initialization."""
         self.embedder = get_embedder()
 
-    def retrieve_dense_only(self):
+    def retrieve_dense_only(self) -> List[Tuple[Document, float]]:
         """
         Dense-only retrieval using FAISS with CLIP embeddings.
         (Fallback for when hybrid is disabled)
 
         Returns:
-            List of retrieved documents
+            List of (Document, score) tuples where score is an L2 distance
         """
-        # Embed query using CLIP
         query_embedding = self.embedder.embed_text(self.query).tolist()
-
-        # Search in unified vector store
-        results = self.faiss_store.similarity_search_by_vector(
+        results = self.faiss_store.similarity_search_with_score_by_vector(
             embedding=query_embedding,
             k=self.k
         )
         return results
 
-    def retrieve_hybrid(self):
+    def retrieve_hybrid(self) -> List[Document]:
         """
         Hybrid retrieval using EnsembleRetriever (BM25 + Dense).
         Uses LangChain's built-in Reciprocal Rank Fusion (RRF).
@@ -54,10 +52,9 @@ class HybridMultiModalRetrieval:
         Returns:
             List of retrieved documents
         """
-        # Check if BM25 retriever is available
         if self.bm25_retriever is None:
             logger.warning("BM25 retriever not available, falling back to dense-only search")
-            return self.retrieve_dense_only()
+            return [doc for doc, _ in self.retrieve_dense_only()]
 
         # Create dense retriever from FAISS store
         dense_retriever = self.faiss_store.as_retriever(
@@ -76,19 +73,47 @@ class HybridMultiModalRetrieval:
         # Limit to top-k results
         return results[:self.k]
 
-    def retrieve_multimodal(self):
+    def _get_top_similarity(self, docs: List[Document]) -> float:
+        """
+        Get the top similarity score by re-querying FAISS for the single best match.
+        Used for the hybrid path where EnsembleRetriever doesn't expose scores.
+
+        L2 distance is converted to a 0–1 similarity via 1 / (1 + distance).
+
+        Returns:
+            float in [0, 1] — higher means more similar
+        """
+        if not docs:
+            return 0.0
+        query_embedding = self.embedder.embed_text(self.query).tolist()
+        scored = self.faiss_store.similarity_search_with_score_by_vector(
+            embedding=query_embedding, k=1
+        )
+        if scored:
+            distance = scored[0][1]
+            return float(1 / (1 + distance))
+        return 0.0
+
+    def retrieve_multimodal(self) -> Dict:
         """
         Main retrieval method that chooses between hybrid or dense-only search.
 
         Returns:
-            List of retrieved documents
+            Dict with keys:
+              - "docs": List[Document]
+              - "top_similarity": float in [0, 1]
         """
         if self.use_hybrid and HybridSearchConfig.HYBRID_SEARCH_ENABLED:
             logger.info(f"Using hybrid search (BM25: {HybridSearchConfig.BM25_WEIGHT}, Dense: {HybridSearchConfig.DENSE_WEIGHT})")
-            return self.retrieve_hybrid()
+            docs = self.retrieve_hybrid()
+            top_similarity = self._get_top_similarity(docs)
         else:
             logger.info("Using dense-only search")
-            return self.retrieve_dense_only()
+            scored = self.retrieve_dense_only()
+            docs = [doc for doc, _ in scored]
+            top_similarity = float(1 / (1 + scored[0][1])) if scored else 0.0
+
+        return {"docs": docs, "top_similarity": top_similarity}
 
     def create_multimodal_message_for_docs(self, retrieved_docs):
         """
