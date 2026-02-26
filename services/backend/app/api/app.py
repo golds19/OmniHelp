@@ -358,16 +358,69 @@ async def query_documents_agentic_stream(query: Query):
             detail="Agentic RAG system not initialized. Please ingest a document first using /ingest-agentic.",
         )
 
+    t0 = time.perf_counter()
+    result_collector: dict = {}
+
     async def generate():
         try:
             async for token in stream_agentic_rag(
                 question=query.question,
                 llm=llm,
                 rag_system=agentic_rag_system,
+                result_collector=result_collector,
             ):
                 yield token
         except Exception as e:
             yield f"\n\nError: {str(e)}"
+        finally:
+            latency_ms = (time.perf_counter() - t0) * 1000
+            answer     = result_collector.get("answer", "")
+            sources    = result_collector.get("sources", [])
+            num_chunks = result_collector.get("num_text_chunks", 0)
+            num_images = result_collector.get("num_images", 0)
+
+            # top_similarity: single FAISS k=1 lookup — no LLM cost
+            top_similarity = 0.0
+            try:
+                from app.rag.core.embedder import get_embedder
+                emb = get_embedder().embed_text(query.question).tolist()
+                scored = agentic_rag_system.vectorStore.similarity_search_with_score_by_vector(
+                    emb, k=1
+                )
+                if scored:
+                    top_similarity = round(float(1 / (1 + scored[0][1])), 3)
+            except Exception:
+                pass
+
+            from app.rag.core.metrics import compute_confidence, compute_answer_source_similarity
+            from app.rag.core.config import HybridSearchConfig
+
+            source_pages = {s["page"] for s in sources}
+            relevant_docs = (
+                [d for d in agentic_rag_system.text_docs if d.metadata.get("page") in source_pages]
+                or agentic_rag_system.text_docs[:10]
+            )
+            answer_source_sim = compute_answer_source_similarity(answer, relevant_docs)
+            confidence        = compute_confidence(top_similarity, num_chunks)
+            is_hallucination  = answer_source_sim < HybridSearchConfig.HALLUCINATION_THRESHOLD
+
+            full_result = {
+                "answer": answer,
+                "sources": sources,
+                "num_images": num_images,
+                "num_text_chunks": num_chunks,
+                "top_similarity": top_similarity,
+                "confidence": confidence,
+                "answer_source_similarity": answer_source_sim,
+                "is_hallucination": is_hallucination,
+            }
+            try:
+                _log_query(
+                    query.question, full_result, latency_ms,
+                    document_id=current_agentic_doc_id,
+                )
+            except Exception as e:
+                logger.warning(f"Failed to log streaming query: {e}")
 
     return StreamingResponse(generate(), media_type="text/plain")
 

@@ -5,7 +5,7 @@ LangGraph builder for the Agentic RAG system.
 from langgraph.graph import StateGraph, END
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional
 from .rag_state import AgenticRAGState
 from ..core.rag_manager import MultiModalRAGSystem
 from .agent_tools import get_agent_tools
@@ -98,7 +98,8 @@ def run_agentic_rag(
 async def stream_agentic_rag(
     question: str,
     llm: ChatOpenAI,
-    rag_system: MultiModalRAGSystem
+    rag_system: MultiModalRAGSystem,
+    result_collector: Optional[dict] = None,
 ) -> AsyncGenerator[str, None]:
     """
     Stream tokens from the agentic RAG workflow.
@@ -107,9 +108,12 @@ async def stream_agentic_rag(
         question: The user's question
         llm: The language model to use
         rag_system: The initialized MultiModalRAGSystem
+        result_collector: Optional mutable dict populated with the final graph state
+                          (answer, sources, num_images, num_text_chunks) after all
+                          tokens have been yielded. Used by the endpoint for logging.
 
     Yields:
-    String tokens as they are generated
+        String tokens as they are generated
     """
     graph = build_agentic_rag_graph(llm, rag_system)
 
@@ -122,9 +126,24 @@ async def stream_agentic_rag(
         "num_text_chunks": 0
     }
 
-    async for chunk, metadata in graph.astream(
+    final_state: dict = {}
+
+    async for mode, data in graph.astream(
         initial_state,
-        stream_mode="messages",
+        stream_mode=["messages", "values"],
     ):
-        if chunk.content:
-            yield chunk.content
+        if mode == "messages":
+            chunk, _metadata = data
+            if getattr(chunk, "content", None):
+                yield chunk.content
+        elif mode == "values":
+            final_state = data  # keep overwriting; last snapshot = final state
+
+    # After all tokens are yielded, populate the collector with the final state
+    if result_collector is not None:
+        result_collector.update({
+            "answer": final_state.get("answer", ""),
+            "sources": final_state.get("sources", []),
+            "num_images": final_state.get("num_images", 0),
+            "num_text_chunks": final_state.get("num_text_chunks", 0),
+        })

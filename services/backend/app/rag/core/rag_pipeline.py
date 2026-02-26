@@ -1,56 +1,15 @@
 import logging
-import numpy as np
 from dataclasses import dataclass
 from typing import Dict, Optional
 from .retriever import MultiModalRetrieval
 from .utils import filter_documents_by_type
 from .config import HybridSearchConfig
-from .embedder import get_embedder
+from .metrics import compute_confidence, compute_answer_source_similarity
 from langchain_openai import ChatOpenAI
 from langchain_community.vectorstores import FAISS
 from langchain_community.retrievers import BM25Retriever
 
 logger = logging.getLogger(__name__)
-
-
-def _compute_confidence(top_similarity: float, num_chunks: int) -> float:
-    """
-    Compute a confidence score blending retrieval similarity and chunk coverage.
-
-    - Similarity component (70%): how well the top result matches the query
-    - Coverage component (30%): how many chunks were retrieved (caps at k=5)
-
-    Returns:
-        float in [0, 1], rounded to 3 decimal places
-    """
-    sim_score = min(top_similarity, 1.0)
-    chunk_score = min(num_chunks / 5.0, 1.0)
-    return round(0.7 * sim_score + 0.3 * chunk_score, 3)
-
-
-def _compute_answer_source_similarity(answer: str, text_docs) -> float:
-    """
-    Compute the maximum cosine similarity between the LLM answer and any
-    retrieved text chunk.
-
-    CLIP embeddings are L2-normalized unit vectors, so cosine similarity
-    equals the dot product.
-
-    Returns:
-        float in [0, 1] — higher means the answer is better grounded in sources.
-        Returns 0.0 if there are no text chunks or the answer is empty.
-    """
-    if not text_docs or not answer.strip():
-        return 0.0
-    embedder = get_embedder()
-    answer_emb = embedder.embed_text(answer)
-    max_sim = 0.0
-    for doc in text_docs:
-        doc_emb = embedder.embed_text(doc.page_content)
-        sim = float(np.dot(answer_emb, doc_emb))
-        if sim > max_sim:
-            max_sim = sim
-    return round(max_sim, 3)
 
 
 @dataclass
@@ -113,8 +72,8 @@ class MultiModalRAG:
         message = retriever.create_multimodal_message(context_docs)
         response = self.llm.invoke([message])
 
-        confidence = _compute_confidence(top_similarity, num_text_chunks)
-        answer_source_similarity = _compute_answer_source_similarity(response.content, text_docs)
+        confidence = compute_confidence(top_similarity, num_text_chunks)
+        answer_source_similarity = compute_answer_source_similarity(response.content, text_docs)
         is_hallucination = answer_source_similarity < HybridSearchConfig.HALLUCINATION_THRESHOLD
 
         if is_hallucination:
