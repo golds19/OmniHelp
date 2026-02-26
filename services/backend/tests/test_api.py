@@ -36,7 +36,9 @@ class TestIngestEndpoint:
     def test_ingest_accepts_pdf(self, app_client, sample_pdf_bytes):
         """Test that PDF files are accepted (mocking processing)."""
         with patch('app.api.app.DataEmbedding') as MockDE, \
-             patch('app.api.app.VectorStore') as MockVS:
+             patch('app.api.app.VectorStore') as MockVS, \
+             patch('app.api.app.save_index'), \
+             patch('app.api.app.save_document', return_value=1):
 
             # Mock the data embedding
             mock_de_instance = MagicMock()
@@ -195,7 +197,13 @@ class TestAgenticIngestEndpoint:
         """Test that agentic PDF ingestion works."""
         import app.api.app as app_module
 
-        with patch.object(app_module.agentic_rag_system, 'initialize') as mock_init:
+        with patch.object(app_module.agentic_rag_system, 'initialize'), \
+             patch('app.api.app.save_index'), \
+             patch('app.api.app.save_document', return_value=1), \
+             patch.object(app_module.agentic_rag_system, 'vectorStore', new=MagicMock(), create=True), \
+             patch.object(app_module.agentic_rag_system, 'image_data_store', new={}, create=True), \
+             patch.object(app_module.agentic_rag_system, 'text_docs', new=[], create=True):
+
             fake_pdf = BytesIO(sample_pdf_bytes)
             response = app_client.post(
                 "/ingest-agentic",

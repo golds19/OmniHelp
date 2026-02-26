@@ -20,6 +20,9 @@ class AppConfig:
     # Temporary directory for file uploads
     TEMP_DIR: str = os.getenv("TEMP_DIR", "temp")
 
+    # Directory for persistent data (SQLite DB + FAISS indices)
+    DATA_DIR: str = os.getenv("DATA_DIR", "data")
+
 
 class PDFConfig:
     """Configuration for PDF processing"""
