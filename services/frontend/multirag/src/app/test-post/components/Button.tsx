@@ -1,22 +1,20 @@
 import { SpinnerIcon } from './Icons';
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'success' | 'danger';
+  variant?: 'primary' | 'danger';
   isLoading?: boolean;
   loadingText?: string;
   children: React.ReactNode;
 }
 
 const variantStyles = {
-  primary: 'bg-indigo-600 text-white hover:bg-indigo-700 border border-indigo-600',
-  success: 'bg-indigo-600 text-white hover:bg-indigo-700 border border-indigo-600',
-  danger: 'bg-white text-neutral-700 border border-neutral-300 hover:bg-neutral-50',
+  primary: 'bg-indigo-600 text-white hover:bg-indigo-700 dark:hover:bg-indigo-500 border border-indigo-600',
+  danger: 'bg-white text-neutral-700 border border-neutral-300 hover:bg-neutral-50 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700 dark:hover:bg-zinc-700',
 };
 
 const spinnerStyles = {
   primary: 'text-white',
-  success: 'text-white',
-  danger: 'text-neutral-600',
+  danger: 'text-neutral-600 dark:text-zinc-400',
 };
 
 export const Button = ({

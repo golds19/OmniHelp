@@ -15,6 +15,10 @@ export interface QueryResponse {
   num_images: number;
   num_text_chunks: number;
   agent_type?: string;
+  confidence?: number;
+  top_similarity?: number;
+  answer_source_similarity?: number;
+  is_hallucination?: boolean;
 }
 
 // Response from /ingest-agentic endpoint
@@ -28,40 +32,32 @@ export interface QueryRequest {
   question: string;
 }
 
-// Voice transcription response
-export interface TranscribeResponse {
-  transcript: string;
-  language: string;
-  filename: string;
-}
-
-// Voice query result with audio
-export interface VoiceQueryResult {
-  transcript: string;
-  answer: string;
-  audioUrl: string;
-  sources: DocumentSource[];
-  num_images: number;
-  num_text_chunks: number;
-}
-
 // Generic error response from API
 export interface APIError {
   detail: string;
 }
 
-// Streaming state for query responses
-export interface StreamingState {
-  isStreaming: boolean;
-  response: string;
-  error: string | null;
+// A single entry from GET /eval/logs
+export interface QueryLog {
+  id: number;
+  document_id: number | null;
+  timestamp: string;
+  query: string;
+  answer_length: number;
+  num_text_chunks: number;
+  num_images: number;
+  top_similarity: number;
+  confidence: number;
+  answer_source_similarity: number;
+  is_hallucination: boolean;
+  rejected: boolean;
+  source_pages: number[];
+  latency_ms: number;
 }
 
-// Document ingest state
-export interface IngestState {
-  ingested: boolean;
-  status: string;
-  isPending: boolean;
+// Response from GET /eval/logs
+export interface EvalLogsResponse {
+  logs: QueryLog[];
 }
 
 // File validation constraints
@@ -70,11 +66,4 @@ export const FILE_CONSTRAINTS = {
   MAX_FILE_SIZE_BYTES: 25 * 1024 * 1024,
   SUPPORTED_FORMATS: ['pdf'] as const,
   MAX_QUERY_LENGTH: 4096,
-} as const;
-
-// Audio constraints for voice features
-export const AUDIO_CONSTRAINTS = {
-  MAX_AUDIO_SIZE_MB: 25,
-  MAX_AUDIO_SIZE_BYTES: 25 * 1024 * 1024,
-  SUPPORTED_FORMATS: ['mp3', 'mp4', 'mpeg', 'mpga', 'm4a', 'wav', 'webm'] as const,
 } as const;

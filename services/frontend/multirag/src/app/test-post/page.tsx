@@ -7,15 +7,28 @@ import { FileUploadSection } from "./components/FileUploadSection";
 import { QuerySection } from "./components/QuerySection";
 import { ResponseDisplay } from "./components/ResponseDisplay";
 import { API_BASE_URL } from "./utils/constants";
-import type { QueryResponse } from "@/types/api";
 
 type BackendStatus = 'connecting' | 'online' | 'offline';
 
 export default function TestPost() {
   const [input, setInput] = useState("");
   const [file, setFile] = useState<File | null>(null);
-  const [metadata, setMetadata] = useState<QueryResponse | null>(null);
   const [backendStatus, setBackendStatus] = useState<BackendStatus>('connecting');
+  const [isDark, setIsDark] = useState(true);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('theme');
+    const dark = saved !== 'light';
+    setIsDark(dark);
+    document.documentElement.classList.toggle('dark', dark);
+  }, []);
+
+  const toggleTheme = () => {
+    const newDark = !isDark;
+    setIsDark(newDark);
+    document.documentElement.classList.toggle('dark', newDark);
+    localStorage.setItem('theme', newDark ? 'dark' : 'light');
+  };
 
   useEffect(() => {
     fetch(`${API_BASE_URL}/ping`, { signal: AbortSignal.timeout(5000) })
@@ -24,77 +37,78 @@ export default function TestPost() {
   }, []);
 
   const { ingested, ingestStatus, isPending, ingestDocument, resetIngestStatus } = useDocumentIngest();
-  const { response, isStreaming, queryDocument, stopQuery, clearResponse } = useDocumentQuery();
+  const { response, isStreaming, queryLog, queryDocument, stopQuery, clearResponse } = useDocumentQuery();
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0] || null;
     setFile(selectedFile);
     resetIngestStatus();
     clearResponse();
-    setMetadata(null);
   };
 
   const handleIngest = async (e: React.FormEvent) => {
     e.preventDefault();
     clearResponse();
-    setMetadata(null);
     await ingestDocument(file);
   };
 
   const handleQuery = async (e: React.FormEvent) => {
     e.preventDefault();
-    setMetadata(null);
     await queryDocument(input);
   };
 
   if (backendStatus === 'connecting') {
     return (
-      <main className="min-h-screen bg-neutral-50 flex items-center justify-center">
+      <main className="min-h-screen bg-neutral-50 dark:bg-zinc-950 flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
-          <div className="h-5 w-5 rounded-full border-2 border-neutral-200 border-t-indigo-600 animate-spin" />
-          <p className="text-sm text-neutral-400">Connecting to backend...</p>
+          <div className="h-5 w-5 rounded-full border-2 border-neutral-200 border-t-indigo-600 dark:border-zinc-700 dark:border-t-indigo-400 animate-spin" />
+          <p className="text-sm text-neutral-400 dark:text-zinc-500">Connecting to backend...</p>
         </div>
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen bg-neutral-50 flex justify-center pt-20 pb-16 px-6">
-      <div className="w-full max-w-2xl space-y-10">
-        {backendStatus === 'offline' && (
-          <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
-            <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-amber-500" />
-            Backend unavailable — requests may fail
-          </div>
-        )}
+    <main className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50/30 dark:bg-none dark:bg-zinc-950 flex justify-center pt-12 pb-20 px-4">
+      <div className="w-full max-w-3xl">
+        <div className="bg-slate-50 rounded-2xl shadow-md border border-slate-200 dark:bg-zinc-900 dark:shadow-xl dark:border-zinc-800 p-8 space-y-8">
+          <Header backendStatus={backendStatus} isDark={isDark} onToggleTheme={toggleTheme} />
 
-        <Header />
+          <div className="border-t border-slate-200/60 dark:border-zinc-800" />
 
-        <FileUploadSection
-          file={file}
-          isPending={isPending}
-          ingested={ingested}
-          ingestStatus={ingestStatus}
-          onFileChange={handleFileChange}
-          onIngest={handleIngest}
-        />
+          <FileUploadSection
+            file={file}
+            isPending={isPending}
+            ingested={ingested}
+            ingestStatus={ingestStatus}
+            onFileChange={handleFileChange}
+            onIngest={handleIngest}
+          />
 
-        <QuerySection
-          input={input}
-          isPending={isPending}
-          ingested={ingested}
-          isStreaming={isStreaming}
-          onInputChange={setInput}
-          onQuery={handleQuery}
-          onStop={stopQuery}
-        />
+          <div className="border-t border-slate-200/60 dark:border-zinc-800" />
 
-        <ResponseDisplay
-          response={response}
-          metadata={metadata}
-          isStreaming={isStreaming}
-          ingested={ingested}
-        />
+          <QuerySection
+            input={input}
+            isPending={isPending}
+            ingested={ingested}
+            isStreaming={isStreaming}
+            onInputChange={setInput}
+            onQuery={handleQuery}
+            onStop={stopQuery}
+          />
+
+          {(response || ingested) && (
+            <>
+              <div className="border-t border-slate-200/60 dark:border-zinc-800" />
+              <ResponseDisplay
+                response={response}
+                queryLog={queryLog}
+                isStreaming={isStreaming}
+                ingested={ingested}
+              />
+            </>
+          )}
+        </div>
       </div>
     </main>
   );
