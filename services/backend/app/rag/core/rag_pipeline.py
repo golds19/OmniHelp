@@ -1,9 +1,11 @@
 import logging
+import numpy as np
 from dataclasses import dataclass
 from typing import Dict, Optional
 from .retriever import MultiModalRetrieval
 from .utils import filter_documents_by_type
 from .config import HybridSearchConfig
+from .embedder import get_embedder
 from langchain_openai import ChatOpenAI
 from langchain_community.vectorstores import FAISS
 from langchain_community.retrievers import BM25Retriever
@@ -26,6 +28,31 @@ def _compute_confidence(top_similarity: float, num_chunks: int) -> float:
     return round(0.7 * sim_score + 0.3 * chunk_score, 3)
 
 
+def _compute_answer_source_similarity(answer: str, text_docs) -> float:
+    """
+    Compute the maximum cosine similarity between the LLM answer and any
+    retrieved text chunk.
+
+    CLIP embeddings are L2-normalized unit vectors, so cosine similarity
+    equals the dot product.
+
+    Returns:
+        float in [0, 1] — higher means the answer is better grounded in sources.
+        Returns 0.0 if there are no text chunks or the answer is empty.
+    """
+    if not text_docs or not answer.strip():
+        return 0.0
+    embedder = get_embedder()
+    answer_emb = embedder.embed_text(answer)
+    max_sim = 0.0
+    for doc in text_docs:
+        doc_emb = embedder.embed_text(doc.page_content)
+        sim = float(np.dot(answer_emb, doc_emb))
+        if sim > max_sim:
+            max_sim = sim
+    return round(max_sim, 3)
+
+
 @dataclass
 class MultiModalRAG:
     """
@@ -46,7 +73,8 @@ class MultiModalRAG:
         Supports both hybrid (BM25 + Dense) and dense-only search.
 
         Returns:
-            Dict: Contains answer, sources, metadata, confidence, and top_similarity
+            Dict: Contains answer, sources, metadata, confidence, top_similarity,
+                  answer_source_similarity, and is_hallucination
         """
         # Retrieve relevant documents
         retriever = MultiModalRetrieval(
@@ -64,7 +92,6 @@ class MultiModalRAG:
         # Log retrieved context info
         logger.debug(f"Retrieved {len(context_docs)} documents for context (top_similarity={top_similarity:.3f})")
 
-        # Return both response and metadata
         text_docs, image_docs = filter_documents_by_type(context_docs)
         num_text_chunks = len(text_docs)
 
@@ -78,15 +105,23 @@ class MultiModalRAG:
                 "num_text_chunks": 0,
                 "confidence": 0.0,
                 "top_similarity": top_similarity,
+                "answer_source_similarity": 0.0,
+                "is_hallucination": False,
             }
 
-        # Create multimodal message
+        # Create multimodal message and call LLM
         message = retriever.create_multimodal_message(context_docs)
-
-        # Get response from LLM
         response = self.llm.invoke([message])
 
         confidence = _compute_confidence(top_similarity, num_text_chunks)
+        answer_source_similarity = _compute_answer_source_similarity(response.content, text_docs)
+        is_hallucination = answer_source_similarity < HybridSearchConfig.HALLUCINATION_THRESHOLD
+
+        if is_hallucination:
+            logger.warning(
+                f"Hallucination flagged: answer_source_similarity {answer_source_similarity:.3f} "
+                f"< threshold {HybridSearchConfig.HALLUCINATION_THRESHOLD}"
+            )
 
         return {
             "answer": response.content,
@@ -96,4 +131,6 @@ class MultiModalRAG:
             "num_text_chunks": num_text_chunks,
             "confidence": confidence,
             "top_similarity": top_similarity,
+            "answer_source_similarity": answer_source_similarity,
+            "is_hallucination": is_hallucination,
         }

@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 import time
 from pathlib import Path
 import shutil
@@ -7,7 +8,7 @@ import shutil
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from langchain_openai import ChatOpenAI
 
 from app.rag.core.data_ingestion import DataEmbedding
@@ -62,8 +63,36 @@ agentic_rag_system = MultiModalRAGSystem()
 def ping():
     return {"message": "pong"}
 
+# Compiled once at module load — patterns that indicate prompt injection attempts
+_INJECTION_PATTERNS = re.compile(
+    r"ignore\s+(previous|above|all)?\s*instructions?"
+    r"|forget\s+(what|everything)"
+    r"|disregard\s+(all|previous|above)?\s*instructions?"
+    r"|you\s+are\s+now\b"
+    r"|act\s+as\b"
+    r"|pretend\s+(you\s+are|to\s+be)"
+    r"|system\s+prompt"
+    r"|your\s+(true|real|actual)\s+purpose"
+    r"|\bDAN\b"
+    r"|developer\s+mode"
+    r"|jailbreak"
+    r"|\[INST\]|\[SYS\]|<\||\|>"
+    r"|-{5,}|={5,}",
+    re.IGNORECASE,
+)
+
+
 class Query(BaseModel):
     question: str
+
+    @field_validator("question")
+    @classmethod
+    def no_injection(cls, v: str) -> str:
+        if len(v) > 2000:
+            raise ValueError("Question exceeds maximum length of 2000 characters")
+        if _INJECTION_PATTERNS.search(v):
+            raise ValueError("Question contains disallowed patterns")
+        return v
 
 @app.post("/ingest")
 async def ingest_document(file: UploadFile = File(...)):
@@ -152,6 +181,8 @@ async def query_documents(query: Query):
                 "num_text_chunks": result["num_text_chunks"],
                 "confidence": result.get("confidence", 0.0),
                 "top_similarity": result.get("top_similarity", 0.0),
+                "answer_source_similarity": result.get("answer_source_similarity", 0.0),
+                "is_hallucination": result.get("is_hallucination", False),
             },
             status_code=200
         )
