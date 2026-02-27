@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  # Backend API Service
+  backend:
+    build:
+      context: ./services/backend
+      dockerfile: Dockerfile
+    container_name: lifeforge-backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LANGSMITH_TRACING=${LANGSMITH_TRACING:-false}
+    volumes:
+      # Persistent storage for uploaded files
+      - backend-temp:/app/temp
+      # Persistent storage for FAISS indices + SQLite DB
+      - backend-data:/app/data
+    networks:
+      - lifeforge-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Frontend Next.js Service
+  frontend:
+    build:
+      context: ./services/frontend/multirag
+      dockerfile: Dockerfile
+      args:
+        # NEXT_PUBLIC_* vars are baked into the bundle at build time, not runtime.
+        # Must use http://localhost:8000 (browser-reachable), not http://backend:8000 (Docker-internal).
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+    container_name: lifeforge-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - lifeforge-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+# Networks
+networks:
+  lifeforge-network:
+    driver: bridge
+    name: lifeforge-network
+
+# Volumes for persistent data
+volumes:
+  backend-temp:
+    name: lifeforge-backend-temp
+  backend-data:
+    name: lifeforge-backend-data

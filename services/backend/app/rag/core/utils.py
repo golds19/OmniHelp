@@ -2,7 +2,7 @@
 Shared utilities for RAG core components.
 """
 from typing import Dict, List, Tuple
-from langchain.schema.messages import HumanMessage
+from langchain_core.messages import HumanMessage
 from langchain_core.documents import Document
 
 
