@@ -12,10 +12,12 @@ class AppConfig:
     """Application-level configuration"""
 
     # CORS settings
-    CORS_ORIGINS: List[str] = os.getenv(
-        "CORS_ORIGINS",
-        "http://localhost,http://localhost:3000"
-    ).split(",")
+    CORS_ORIGINS: List[str] = [
+        o.strip() for o in os.getenv(
+            "CORS_ORIGINS",
+            "http://localhost,http://localhost:3000"
+        ).split(",") if o.strip()
+    ]
 
     # Temporary directory for file uploads
     TEMP_DIR: str = os.getenv("TEMP_DIR", "temp")
