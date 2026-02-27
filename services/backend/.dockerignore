@@ -64,3 +64,9 @@ docs/
 # CI/CD
 .github/
 .gitlab-ci.yml
+
+# Runtime data (generated at runtime, not app source)
+data/
+
+# Development notebooks and experiments
+app/notebooks/

@@ -6,7 +6,6 @@ langchain-openai>=0.2,<1.0
 langchain-community>=0.3,<1.0
 pydantic
 python-dotenv
-sentence-transformers
 Pillow
 numpy
 torch
@@ -14,7 +13,6 @@ transformers
 pymupdf
 langchain-experimental>=0.3,<1.0
 langsmith
-IPython
 fastapi
 uvicorn
 python-multipart
