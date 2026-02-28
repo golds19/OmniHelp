@@ -1,6 +1,11 @@
 // Jest setup file for React Testing Library
 import '@testing-library/jest-dom';
 
+// Polyfill TextEncoder/TextDecoder (not provided by jsdom in this version)
+const { TextEncoder, TextDecoder } = require('util');
+global.TextEncoder = TextEncoder;
+global.TextDecoder = TextDecoder;
+
 // Mock fetch globally
 global.fetch = jest.fn();
 

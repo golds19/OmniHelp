@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Lifeforge — Document Intelligence",
-  description: "Upload documents and query them with AI-powered retrieval",
+  description: "AI-powered document intelligence",
 };
 
 export default function RootLayout({
@@ -25,6 +25,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: `(function(){var t=localStorage.getItem('theme');if(t!=='light')document.documentElement.classList.add('dark');})();` }} />
+      </head>
       <body
         className={`${dmSans.variable} ${geistMono.variable} antialiased`}
       >

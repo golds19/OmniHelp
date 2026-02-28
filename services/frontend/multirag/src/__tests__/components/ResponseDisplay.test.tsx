@@ -2,14 +2,31 @@
  * Tests for ResponseDisplay component
  */
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { ResponseDisplay } from '../../app/test-post/components/ResponseDisplay';
-import type { QueryResponse } from '@/types/api';
+import type { QueryLog } from '@/types/api';
+
+const sampleLog: QueryLog = {
+  id: 1,
+  document_id: null,
+  timestamp: '2024-01-01T00:00:00Z',
+  query: 'What is machine learning?',
+  answer_length: 120,
+  num_text_chunks: 3,
+  num_images: 1,
+  top_similarity: 0.85,
+  confidence: 0.82,
+  answer_source_similarity: 0.75,
+  is_hallucination: false,
+  rejected: false,
+  source_pages: [3, 7, 12],
+  latency_ms: 1234,
+};
 
 describe('ResponseDisplay', () => {
   const defaultProps = {
     response: '',
-    metadata: null,
+    queryLog: null,
     isStreaming: false,
     ingested: false,
   };
@@ -75,7 +92,7 @@ describe('ResponseDisplay', () => {
         />
       );
 
-      expect(screen.getByText('Streaming...')).toBeInTheDocument();
+      expect(screen.getByTestId('streaming-indicator')).toBeInTheDocument();
     });
 
     it('should not show streaming indicator when isStreaming is false', () => {
@@ -88,157 +105,175 @@ describe('ResponseDisplay', () => {
         />
       );
 
-      expect(screen.queryByText('Streaming...')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('streaming-indicator')).not.toBeInTheDocument();
     });
   });
 
   describe('metadata display', () => {
-    const sampleMetadata: QueryResponse = {
-      answer: 'Test answer',
-      sources: [
-        { page: 1, type: 'text' },
-        { page: 2, type: 'image' },
-      ],
-      num_images: 1,
-      num_text_chunks: 3,
-      agent_type: 'ReAct',
-    };
-
-    it('should display metadata when present', () => {
+    it('should not render metadata row when queryLog is null', () => {
       render(
         <ResponseDisplay
           {...defaultProps}
           response="Test response"
-          metadata={sampleMetadata}
+          queryLog={null}
           ingested={true}
         />
       );
 
-      expect(screen.getByText('3 text chunks')).toBeInTheDocument();
+      expect(screen.queryByText(/82%/)).not.toBeInTheDocument();
+      expect(screen.queryByText('Pages:')).not.toBeInTheDocument();
     });
 
-    it('should display text chunks count', () => {
+    it('should not render metadata row while streaming', () => {
       render(
         <ResponseDisplay
           {...defaultProps}
           response="Test response"
-          metadata={sampleMetadata}
+          queryLog={sampleLog}
+          isStreaming={true}
           ingested={true}
         />
       );
 
-      expect(screen.getByText('3 text chunks')).toBeInTheDocument();
+      expect(screen.queryByText('82% confidence')).not.toBeInTheDocument();
     });
 
-    it('should display images count', () => {
+    it('should render confidence badge when queryLog is provided', () => {
       render(
         <ResponseDisplay
           {...defaultProps}
           response="Test response"
-          metadata={sampleMetadata}
+          queryLog={sampleLog}
+          isStreaming={false}
           ingested={true}
         />
       );
 
-      expect(screen.getByText('1 images')).toBeInTheDocument();
+      expect(screen.getByText('82% confidence')).toBeInTheDocument();
     });
 
-    it('should display total sources count', () => {
+    it('should render source page chips', () => {
       render(
         <ResponseDisplay
           {...defaultProps}
           response="Test response"
-          metadata={sampleMetadata}
+          queryLog={sampleLog}
+          isStreaming={false}
           ingested={true}
         />
       );
 
-      expect(screen.getByText('2 sources')).toBeInTheDocument();
+      const pagesContainer = screen.getByTestId('source-pages');
+      expect(within(pagesContainer).getByText('3')).toBeInTheDocument();
+      expect(within(pagesContainer).getByText('7')).toBeInTheDocument();
+      expect(within(pagesContainer).getByText('12')).toBeInTheDocument();
     });
 
-    it('should display agent type', () => {
+    it('should render latency rounded to 1 decimal', () => {
       render(
         <ResponseDisplay
           {...defaultProps}
           response="Test response"
-          metadata={sampleMetadata}
+          queryLog={sampleLog}
+          isStreaming={false}
           ingested={true}
         />
       );
 
-      expect(screen.getByText('ReAct')).toBeInTheDocument();
+      expect(screen.getByText('1.2s')).toBeInTheDocument();
     });
 
-    it('should display source references', () => {
+    it('should render hallucination warning when is_hallucination is true', () => {
+      const hallucinationLog = { ...sampleLog, is_hallucination: true };
+
       render(
         <ResponseDisplay
           {...defaultProps}
           response="Test response"
-          metadata={sampleMetadata}
+          queryLog={hallucinationLog}
+          isStreaming={false}
           ingested={true}
         />
       );
 
-      expect(screen.getByText(/Page 1/)).toBeInTheDocument();
-      expect(screen.getByText(/Page 2/)).toBeInTheDocument();
+      expect(screen.getByText(/Low groundedness/)).toBeInTheDocument();
     });
 
-    it('should not display metadata section when metadata is null', () => {
+    it('should not render hallucination warning when is_hallucination is false', () => {
       render(
         <ResponseDisplay
           {...defaultProps}
           response="Test response"
-          metadata={null}
+          queryLog={sampleLog}
+          isStreaming={false}
           ingested={true}
         />
       );
 
-      expect(screen.queryByText(/text chunks/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Low groundedness/)).not.toBeInTheDocument();
     });
-  });
 
-  describe('empty sources handling', () => {
-    it('should not show sources section when sources array is empty', () => {
-      const metadataNoSources: QueryResponse = {
-        answer: 'Test answer',
-        sources: [],
-        num_images: 0,
-        num_text_chunks: 0,
-        agent_type: 'ReAct',
-      };
+    it('should not render source chips when source_pages is empty', () => {
+      const logNoPages = { ...sampleLog, source_pages: [] };
 
       render(
         <ResponseDisplay
           {...defaultProps}
           response="Test response"
-          metadata={metadataNoSources}
+          queryLog={logNoPages}
+          isStreaming={false}
           ingested={true}
         />
       );
 
-      expect(screen.queryByText(/Page/)).not.toBeInTheDocument();
+      expect(screen.queryByText('Pages:')).not.toBeInTheDocument();
     });
   });
 
-  describe('agent type fallback', () => {
-    it('should show N/A when agent_type is undefined', () => {
-      const metadataNoAgent: QueryResponse = {
-        answer: 'Test answer',
-        sources: [],
-        num_images: 0,
-        num_text_chunks: 0,
-      };
+  describe('confidence color thresholds', () => {
+    it('should render confidence for high confidence (>=0.7)', () => {
+      const highConfLog = { ...sampleLog, confidence: 0.85 };
 
       render(
         <ResponseDisplay
           {...defaultProps}
           response="Test response"
-          metadata={metadataNoAgent}
+          queryLog={highConfLog}
           ingested={true}
         />
       );
 
-      expect(screen.getByText('N/A')).toBeInTheDocument();
+      expect(screen.getByText('85% confidence')).toBeInTheDocument();
+    });
+
+    it('should render confidence for medium confidence (0.4-0.7)', () => {
+      const midConfLog = { ...sampleLog, confidence: 0.55 };
+
+      render(
+        <ResponseDisplay
+          {...defaultProps}
+          response="Test response"
+          queryLog={midConfLog}
+          ingested={true}
+        />
+      );
+
+      expect(screen.getByText('55% confidence')).toBeInTheDocument();
+    });
+
+    it('should render confidence for low confidence (<0.4)', () => {
+      const lowConfLog = { ...sampleLog, confidence: 0.25 };
+
+      render(
+        <ResponseDisplay
+          {...defaultProps}
+          response="Test response"
+          queryLog={lowConfLog}
+          ingested={true}
+        />
+      );
+
+      expect(screen.getByText('25% confidence')).toBeInTheDocument();
     });
   });
 });

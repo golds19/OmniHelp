@@ -3,7 +3,6 @@ from dataclasses import dataclass
 from typing import Dict, List, Tuple
 from langchain_community.vectorstores import FAISS
 from langchain_community.retrievers import BM25Retriever
-from langchain.retrievers import EnsembleRetriever
 from langchain_core.documents import Document
 from .embedder import get_embedder
 from .config import HybridSearchConfig
@@ -16,7 +15,7 @@ logger = logging.getLogger(__name__)
 class HybridMultiModalRetrieval:
     """
     Class for hybrid retrieval combining BM25 (sparse) and FAISS (dense) retrievers
-    using EnsembleRetriever for automatic fusion.
+    using Reciprocal Rank Fusion (RRF).
     """
     query: str
     faiss_store: FAISS
@@ -46,8 +45,7 @@ class HybridMultiModalRetrieval:
 
     def retrieve_hybrid(self) -> List[Document]:
         """
-        Hybrid retrieval using EnsembleRetriever (BM25 + Dense).
-        Uses LangChain's built-in Reciprocal Rank Fusion (RRF).
+        Hybrid retrieval using BM25 + Dense with inline Reciprocal Rank Fusion (RRF).
 
         Returns:
             List of retrieved documents
@@ -61,22 +59,28 @@ class HybridMultiModalRetrieval:
             search_kwargs={"k": HybridSearchConfig.K_DENSE_CANDIDATES}
         )
 
-        # Create ensemble retriever with both sparse and dense
-        ensemble_retriever = EnsembleRetriever(
-            retrievers=[self.bm25_retriever, dense_retriever],
-            weights=[HybridSearchConfig.BM25_WEIGHT, HybridSearchConfig.DENSE_WEIGHT]
-        )
+        bm25_docs = self.bm25_retriever.invoke(self.query)
+        dense_docs = dense_retriever.invoke(self.query)
 
-        # Retrieve documents using hybrid search
-        results = ensemble_retriever.invoke(self.query)
+        # Reciprocal Rank Fusion with configured weights
+        rrf_scores: dict = {}
+        doc_map: dict = {}
+        for rank, doc in enumerate(bm25_docs):
+            key = doc.page_content[:200]
+            rrf_scores[key] = rrf_scores.get(key, 0.0) + HybridSearchConfig.BM25_WEIGHT / (HybridSearchConfig.RRF_K_CONSTANT + rank + 1)
+            doc_map[key] = doc
+        for rank, doc in enumerate(dense_docs):
+            key = doc.page_content[:200]
+            rrf_scores[key] = rrf_scores.get(key, 0.0) + HybridSearchConfig.DENSE_WEIGHT / (HybridSearchConfig.RRF_K_CONSTANT + rank + 1)
+            doc_map[key] = doc
 
-        # Limit to top-k results
-        return results[:self.k]
+        sorted_keys = sorted(rrf_scores, key=lambda k: rrf_scores[k], reverse=True)
+        return [doc_map[k] for k in sorted_keys[:self.k]]
 
     def _get_top_similarity(self, docs: List[Document]) -> float:
         """
         Get the top similarity score by re-querying FAISS for the single best match.
-        Used for the hybrid path where EnsembleRetriever doesn't expose scores.
+        Used for the hybrid path where RRF doesn't expose raw scores.
 
         L2 distance is converted to a 0–1 similarity via 1 / (1 + distance).
 

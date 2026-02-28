@@ -1,133 +1,101 @@
-import type { StreamingMetadata } from '@/types/api';
+import type { QueryLog } from '@/types/api';
 import { ShieldCheckIcon, ShieldIcon } from './Icons';
+
+const renderMarkdown = (text: string) => {
+  const parts = text.split(/(\*\*[^*\n]+\*\*)/g);
+  return parts.map((part, i) =>
+    part.startsWith('**') && part.endsWith('**')
+      ? <strong key={i} className="font-semibold">{part.slice(2, -2)}</strong>
+      : part
+  );
+};
 
 interface ResponseDisplayProps {
   response: string;
-  metadata: StreamingMetadata | null;
+  queryLog: QueryLog | null;
   isStreaming: boolean;
   ingested: boolean;
 }
 
-const ConfidenceGauge = ({ value }: { value: number }) => {
-  const pct = Math.round(value * 100);
-  const color =
-    pct >= 70 ? 'bg-success' :
-    pct >= 40 ? 'bg-warning' :
-    'bg-danger';
-  const textColor =
-    pct >= 70 ? 'text-success' :
-    pct >= 40 ? 'text-warning' :
-    'text-danger';
-
-  return (
-    <div className="flex items-center gap-2.5">
-      <span className="text-xs text-foreground-dim uppercase tracking-wide">Confidence</span>
-      <div className="w-20 h-1.5 rounded-full bg-border overflow-hidden">
-        <div className={`h-full rounded-full ${color} transition-all duration-500`} style={{ width: `${pct}%` }} />
-      </div>
-      <span className={`text-sm font-mono font-semibold ${textColor}`}>{pct}%</span>
-    </div>
-  );
+const confidenceColor = (confidence: number) => {
+  if (confidence >= 0.7) return 'text-emerald-600 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-500/10';
+  if (confidence >= 0.4) return 'text-amber-600 bg-amber-50 dark:text-amber-400 dark:bg-amber-500/10';
+  return 'text-red-600 bg-red-50 dark:text-red-400 dark:bg-red-500/10';
 };
 
-const HallucinationBadge = ({ isHallucination }: { isHallucination: boolean }) => {
-  if (isHallucination) {
-    return (
-      <div className="flex items-center gap-1.5 text-danger">
-        <ShieldIcon className="h-4 w-4" />
-        <span className="text-xs font-medium">Low Confidence</span>
-      </div>
-    );
-  }
-  return (
-    <div className="flex items-center gap-1.5 text-success">
-      <ShieldCheckIcon className="h-4 w-4" />
-      <span className="text-xs font-medium">Grounded</span>
-    </div>
-  );
-};
-
-const MetricPill = ({ label, value }: { label: string; value: string }) => (
-  <div className="flex items-center gap-1.5">
-    <span className="text-xs text-foreground-dim">{label}</span>
-    <span className="text-xs font-mono text-foreground-muted">{value}</span>
-  </div>
-);
-
-const MetricsBar = ({ metadata }: { metadata: StreamingMetadata }) => {
-  return (
-    <div className="rounded-xl border border-border bg-surface p-4 space-y-3">
-      {/* Row 1: Key metrics */}
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-        <ConfidenceGauge value={metadata.confidence} />
-
-        <div className="w-px h-4 bg-border" />
-
-        <HallucinationBadge isHallucination={metadata.is_hallucination} />
-
-        <div className="w-px h-4 bg-border" />
-
-        <MetricPill label="Similarity" value={metadata.top_similarity.toFixed(3)} />
-
-        <div className="w-px h-4 bg-border" />
-
-        <MetricPill label="Ans-Src" value={metadata.answer_source_similarity.toFixed(3)} />
-
-        <div className="w-px h-4 bg-border" />
-
-        <MetricPill label="Chunks" value={String(metadata.num_text_chunks)} />
-        <MetricPill label="Images" value={String(metadata.num_images)} />
-      </div>
-
-      {/* Row 2: Source pages */}
-      {metadata.source_pages.length > 0 && (
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs text-foreground-dim">Sources</span>
-          {metadata.source_pages.map((page) => (
-            <span
-              key={page}
-              className="text-xs font-mono px-2 py-0.5 rounded-md bg-accent-muted text-accent font-medium"
-            >
-              p.{page}
-            </span>
-          ))}
-          {metadata.latency_ms > 0 && (
-            <>
-              <div className="flex-1" />
-              <span className="text-xs font-mono text-foreground-dim">
-                {metadata.latency_ms < 1000
-                  ? `${Math.round(metadata.latency_ms)}ms`
-                  : `${(metadata.latency_ms / 1000).toFixed(1)}s`}
-              </span>
-            </>
-          )}
-        </div>
-      )}
-    </div>
-  );
-};
-
-export const ResponseDisplay = ({ response, metadata, isStreaming, ingested }: ResponseDisplayProps) => {
+export const ResponseDisplay = ({ response, queryLog, isStreaming, ingested }: ResponseDisplayProps) => {
   if (!response && !ingested) return null;
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2">
+        <span className={`h-5 w-5 rounded-full text-xs font-bold flex items-center justify-center flex-shrink-0 ${
+          queryLog && !isStreaming
+            ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400'
+            : 'bg-accent-muted text-accent'
+        }`}>
+          3
+        </span>
         <p className="text-xs font-medium text-foreground-dim uppercase tracking-wider">Answer</p>
         {isStreaming && (
-          <span className="text-accent text-sm animate-pulse">Streaming...</span>
+          <span data-testid="streaming-indicator" className="ml-1 inline-flex items-center gap-1 text-accent text-sm">
+            <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
+            <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse [animation-delay:0.2s]" />
+            <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse [animation-delay:0.4s]" />
+          </span>
         )}
       </div>
 
-      <div className="rounded-xl border border-border bg-surface p-5">
+      <div className={response || isStreaming ? 'rounded-xl border border-border bg-surface px-5 py-4' : ''}>
         {response ? (
-          <p className="text-foreground leading-relaxed whitespace-pre-wrap">{response}</p>
+          <p className="text-foreground leading-7 whitespace-pre-wrap">
+            {renderMarkdown(response)}
+            {isStreaming && (
+              <span className="inline-block w-0.5 h-[1em] ml-0.5 bg-accent animate-pulse align-middle" />
+            )}
+          </p>
         ) : (
           <p className="text-foreground-dim italic">Your answer will appear here...</p>
         )}
       </div>
 
-      {metadata && !isStreaming && <MetricsBar metadata={metadata} />}
+      {queryLog && !isStreaming && (
+        <div className="rounded-xl border border-border bg-surface p-4 space-y-2">
+          <div className="flex items-center gap-2 flex-wrap text-sm">
+            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${confidenceColor(queryLog.confidence)}`}>
+              <span className="h-1.5 w-1.5 rounded-full bg-current" />
+              {Math.round(queryLog.confidence * 100)}% confidence
+            </span>
+
+            {!queryLog.is_hallucination ? (
+              <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 text-xs">
+                <ShieldCheckIcon className="h-3.5 w-3.5" />
+                Grounded
+              </span>
+            ) : null}
+
+            {queryLog.source_pages.length > 0 && (
+              <span data-testid="source-pages" className="flex items-center gap-1 flex-wrap">
+                <span className="text-foreground-dim text-xs">Pages:</span>
+                {[...new Set(queryLog.source_pages)].sort((a, b) => a - b).map(p => (
+                  <span key={p} className="px-1.5 py-0.5 text-xs font-mono bg-accent-muted text-accent rounded">
+                    {p}
+                  </span>
+                ))}
+              </span>
+            )}
+
+            <span className="ml-auto text-xs font-mono text-foreground-dim">{(queryLog.latency_ms / 1000).toFixed(1)}s</span>
+          </div>
+
+          {!!queryLog.is_hallucination && (
+            <div className="rounded-lg bg-amber-50 border border-amber-200 text-amber-700 dark:bg-amber-500/10 dark:border-amber-500/20 dark:text-amber-300 px-3 py-2 flex items-center gap-2 text-xs">
+              <ShieldIcon className="h-3.5 w-3.5 flex-shrink-0" />
+              <span>Low groundedness — verify against the document</span>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

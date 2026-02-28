@@ -21,14 +21,19 @@ export const QuerySection = ({
 }: QuerySectionProps) => {
   return (
     <div className="space-y-3">
-      <p className="text-xs font-medium text-foreground-dim uppercase tracking-wider">Question</p>
+      <div className="flex items-center gap-2">
+        <span className="h-5 w-5 rounded-full bg-accent-muted text-accent text-xs font-bold flex items-center justify-center flex-shrink-0">
+          2
+        </span>
+        <p className="text-xs font-medium text-foreground-dim uppercase tracking-wider">Question</p>
+      </div>
 
       <form onSubmit={onQuery} className="space-y-3">
         <textarea
           value={input}
           onChange={(e) => onInputChange(e.target.value)}
           placeholder={ingested ? 'What would you like to know?' : 'Upload a document first...'}
-          rows={3}
+          rows={4}
           className="border border-border rounded-xl px-4 py-3 w-full bg-surface text-foreground placeholder:text-foreground-dim focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent/50 disabled:opacity-40 disabled:cursor-not-allowed resize-none transition-colors"
           disabled={!ingested}
         />

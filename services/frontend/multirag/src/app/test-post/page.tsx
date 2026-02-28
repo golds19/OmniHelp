@@ -14,6 +14,21 @@ export default function TestPost() {
   const [input, setInput] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [backendStatus, setBackendStatus] = useState<BackendStatus>('connecting');
+  const [isDark, setIsDark] = useState(true);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('theme');
+    const dark = saved !== 'light';
+    setIsDark(dark);
+    document.documentElement.classList.toggle('dark', dark);
+  }, []);
+
+  const toggleTheme = () => {
+    const newDark = !isDark;
+    setIsDark(newDark);
+    document.documentElement.classList.toggle('dark', newDark);
+    localStorage.setItem('theme', newDark ? 'dark' : 'light');
+  };
 
   useEffect(() => {
     fetch(`${API_BASE_URL}/ping`, { signal: AbortSignal.timeout(5000) })
@@ -22,7 +37,7 @@ export default function TestPost() {
   }, []);
 
   const { ingested, ingestStatus, isPending, ingestDocument, resetIngestStatus } = useDocumentIngest();
-  const { response, isStreaming, metadata, queryDocument, stopQuery, clearResponse } = useDocumentQuery();
+  const { response, isStreaming, queryLog, queryDocument, stopQuery, clearResponse } = useDocumentQuery();
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0] || null;
@@ -54,42 +69,46 @@ export default function TestPost() {
   }
 
   return (
-    <main className="min-h-screen bg-background flex justify-center pt-20 pb-16 px-6">
-      <div className="w-full max-w-2xl space-y-10">
-        {backendStatus === 'offline' && (
-          <div className="flex items-center gap-2 rounded-xl border border-warning/30 bg-warning-muted px-4 py-3 text-sm text-warning">
-            <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-warning" />
-            Backend unavailable — requests may fail
-          </div>
-        )}
+    <main className="min-h-screen bg-background flex justify-center pt-12 pb-20 px-4">
+      <div className="w-full max-w-3xl">
+        <div className="bg-surface rounded-2xl shadow-md border border-border p-8 space-y-8">
+          <Header backendStatus={backendStatus} isDark={isDark} onToggleTheme={toggleTheme} />
 
-        <Header />
+          <div className="border-t border-border" />
 
-        <FileUploadSection
-          file={file}
-          isPending={isPending}
-          ingested={ingested}
-          ingestStatus={ingestStatus}
-          onFileChange={handleFileChange}
-          onIngest={handleIngest}
-        />
+          <FileUploadSection
+            file={file}
+            isPending={isPending}
+            ingested={ingested}
+            ingestStatus={ingestStatus}
+            onFileChange={handleFileChange}
+            onIngest={handleIngest}
+          />
 
-        <QuerySection
-          input={input}
-          isPending={isPending}
-          ingested={ingested}
-          isStreaming={isStreaming}
-          onInputChange={setInput}
-          onQuery={handleQuery}
-          onStop={stopQuery}
-        />
+          <div className="border-t border-border" />
 
-        <ResponseDisplay
-          response={response}
-          metadata={metadata}
-          isStreaming={isStreaming}
-          ingested={ingested}
-        />
+          <QuerySection
+            input={input}
+            isPending={isPending}
+            ingested={ingested}
+            isStreaming={isStreaming}
+            onInputChange={setInput}
+            onQuery={handleQuery}
+            onStop={stopQuery}
+          />
+
+          {(response || ingested) && (
+            <>
+              <div className="border-t border-border" />
+              <ResponseDisplay
+                response={response}
+                queryLog={queryLog}
+                isStreaming={isStreaming}
+                ingested={ingested}
+              />
+            </>
+          )}
+        </div>
       </div>
     </main>
   );

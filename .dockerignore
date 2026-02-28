@@ -1,0 +1,72 @@
+# ── Frontend service (not needed for backend build) ──────────────────────────
+services/frontend/
+
+# ── Runtime / generated data (re-created at runtime) ─────────────────────────
+data/
+services/backend/data/
+
+# ── Development artifacts ─────────────────────────────────────────────────────
+services/backend/app/notebooks/
+services/backend/tests/
+services/backend/requirements-dev.txt
+
+# ── Python bytecode ───────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+
+# ── Virtual environments ──────────────────────────────────────────────────────
+.venv/
+venv/
+ENV/
+env/
+
+# ── Test artifacts ────────────────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+
+# ── Jupyter ───────────────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+logs/
+temp/
+tmp/
+*.tmp
+
+# ── IDE / OS ──────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# ── Secrets ───────────────────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+
+# ── Git ───────────────────────────────────────────────────────────────────────
+.git/
+.gitignore
+.gitattributes
+
+# ── CI / docs / planning ──────────────────────────────────────────────────────
+.github/
+.gitlab-ci.yml
+docs/
+plan/
+*.md
+README.md
+
+# ── Claude ───────────────────────────────────────────────────────────────────
+.claude/

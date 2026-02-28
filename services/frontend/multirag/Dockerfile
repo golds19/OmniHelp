@@ -30,6 +30,11 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 
+# Accept NEXT_PUBLIC_API_URL at build time so Next.js bakes it into the client bundle.
+# Railway (and docker build --build-arg) passes env vars this way.
+ARG NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+
 # Build the application
 RUN npm run build
 
