@@ -76,6 +76,17 @@ export interface EvalLogsResponse {
   logs: QueryLog[];
 }
 
+// Response from GET /eval/summary
+export interface EvalSummary {
+  total_queries: number;
+  hallucination_rate: number;
+  rejection_rate: number;
+  avg_confidence: number;
+  avg_top_similarity: number;
+  avg_answer_source_similarity: number;
+  avg_latency_ms: number;
+}
+
 // File validation constraints
 export const FILE_CONSTRAINTS = {
   MAX_FILE_SIZE_MB: 25,

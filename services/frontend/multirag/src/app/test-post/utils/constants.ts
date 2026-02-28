@@ -4,6 +4,7 @@ export const API_ENDPOINTS = {
   INGEST: `${API_BASE_URL}/ingest-agentic`,
   QUERY_STREAM: `${API_BASE_URL}/query-agentic-stream`,
   EVAL_LOGS: `${API_BASE_URL}/eval/logs`,
+  EVAL_SUMMARY: `${API_BASE_URL}/eval/summary`,
 } as const;
 
 export const MESSAGES = {
