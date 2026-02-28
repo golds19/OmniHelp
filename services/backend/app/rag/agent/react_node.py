@@ -29,7 +29,9 @@ Important guidelines:
 - Cite page numbers in your answer (e.g., "According to page 3...")
 - If you find relevant images, mention them in your answer
 - Be concise but thorough
-- If the document doesn't contain the answer, say so clearly"""),
+- If the document doesn't contain the answer, say so clearly
+- When prior conversation is provided, use it to understand follow-up questions in context"""),
+        MessagesPlaceholder(variable_name="chat_history", optional=True),
         ("human", "{input}"),
         MessagesPlaceholder(variable_name="agent_scratchpad"),
     ])
@@ -84,9 +86,10 @@ def agent_node(state: AgenticRAGState, agent_executor: AgentExecutor) -> Agentic
 
     last_message = messages[-1]
     question = last_message.content if hasattr(last_message, "content") else str(last_message)
+    chat_history = messages[:-1]  # All prior turns become conversation context
 
     # Run the agent
-    result = agent_executor.invoke({"input": question})
+    result = agent_executor.invoke({"input": question, "chat_history": chat_history})
 
     # Extract the answer and intermediate steps
     answer = result.get("output", "")

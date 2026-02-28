@@ -4,12 +4,26 @@ LangGraph builder for the Agentic RAG system.
 
 from langgraph.graph import StateGraph, END
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage
-from typing import AsyncGenerator, Optional
+from langchain_core.messages import HumanMessage, AIMessage
+from typing import AsyncGenerator, List, Optional
 from .rag_state import AgenticRAGState
 from ..core.rag_manager import MultiModalRAGSystem
 from .agent_tools import get_agent_tools
 from .react_node import create_agent_executor, agent_node
+
+
+def _build_messages(conversation_history: Optional[List[dict]], current_question: str) -> list:
+    """Convert prior conversation turns into LangChain message objects."""
+    msgs = []
+    for msg in (conversation_history or []):
+        role = msg.get("role", "")
+        content = msg.get("content", "")
+        if role == "user":
+            msgs.append(HumanMessage(content=content))
+        elif role == "assistant":
+            msgs.append(AIMessage(content=content))
+    msgs.append(HumanMessage(content=current_question))
+    return msgs
 
 
 def build_agentic_rag_graph(
@@ -58,7 +72,8 @@ def build_agentic_rag_graph(
 def run_agentic_rag(
     question: str,
     llm: ChatOpenAI,
-    rag_system: MultiModalRAGSystem
+    rag_system: MultiModalRAGSystem,
+    conversation_history: Optional[List[dict]] = None,
 ) -> dict:
     """
     Run the agentic RAG workflow with a question.
@@ -74,9 +89,9 @@ def run_agentic_rag(
     # Build the graph
     graph = build_agentic_rag_graph(llm, rag_system)
 
-    # Create initial state
+    # Create initial state — include prior conversation turns
     initial_state = {
-        "messages": [HumanMessage(content=question)],
+        "messages": _build_messages(conversation_history, question),
         "retrieved_docs": [],
         "answer": "",
         "sources": [],
@@ -100,6 +115,7 @@ async def stream_agentic_rag(
     llm: ChatOpenAI,
     rag_system: MultiModalRAGSystem,
     result_collector: Optional[dict] = None,
+    conversation_history: Optional[List[dict]] = None,
 ) -> AsyncGenerator[str, None]:
     """
     Stream tokens from the agentic RAG workflow.
@@ -118,7 +134,7 @@ async def stream_agentic_rag(
     graph = build_agentic_rag_graph(llm, rag_system)
 
     initial_state = {
-        "messages": [HumanMessage(content=question)],
+        "messages": _build_messages(conversation_history, question),
         "retrieved_docs": [],
         "answer": "",
         "sources": [],

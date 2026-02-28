@@ -5,6 +5,11 @@ import { METADATA_DELIMITER } from '@/types/api';
 
 const DEBOUNCE_MS = 50;
 
+export interface ConversationTurn {
+  question: string;
+  answer: string;
+}
+
 /** Map streaming metadata into a QueryLog-compatible shape for display. */
 const toQueryLog = (meta: StreamingMetadata): QueryLog => ({
   id: 0,
@@ -27,6 +32,7 @@ export const useDocumentQuery = () => {
   const [response, setResponse] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [queryLog, setQueryLog] = useState<QueryLog | null>(null);
+  const [conversationTurns, setConversationTurns] = useState<ConversationTurn[]>([]);
   const abortControllerRef = useRef<AbortController | null>(null);
   const lastUpdateRef = useRef<number>(0);
   const pendingUpdateRef = useRef<string>('');
@@ -49,11 +55,17 @@ export const useDocumentQuery = () => {
 
     abortControllerRef.current = new AbortController();
 
+    // Build the message history payload from completed turns
+    const messages = conversationTurns.flatMap((turn) => [
+      { role: 'user', content: turn.question },
+      { role: 'assistant', content: turn.answer },
+    ]);
+
     try {
       const res = await fetch(API_ENDPOINTS.QUERY_STREAM, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question }),
+        body: JSON.stringify({ question, messages }),
         signal: abortControllerRef.current.signal,
       });
 
@@ -93,8 +105,9 @@ export const useDocumentQuery = () => {
 
       // Parse metadata from the final content
       const delimIdx = fullAnswer.indexOf(METADATA_DELIMITER);
+      let answerText = fullAnswer;
       if (delimIdx !== -1) {
-        const answerText = fullAnswer.substring(0, delimIdx);
+        answerText = fullAnswer.substring(0, delimIdx);
         const metaJson = fullAnswer.substring(delimIdx + METADATA_DELIMITER.length);
         setResponse(answerText);
         try {
@@ -105,6 +118,11 @@ export const useDocumentQuery = () => {
         }
       } else {
         setResponse(fullAnswer);
+      }
+
+      // Append completed turn to conversation history
+      if (answerText.trim()) {
+        setConversationTurns((prev) => [...prev, { question, answer: answerText.trim() }]);
       }
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') {
@@ -133,12 +151,20 @@ export const useDocumentQuery = () => {
     setQueryLog(null);
   };
 
+  const clearConversation = () => {
+    setConversationTurns([]);
+    setResponse('');
+    setQueryLog(null);
+  };
+
   return {
     response,
     isStreaming,
     queryLog,
+    conversationTurns,
     queryDocument,
     stopQuery,
     clearResponse,
+    clearConversation,
   };
 };

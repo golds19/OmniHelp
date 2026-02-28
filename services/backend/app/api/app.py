@@ -4,6 +4,7 @@ import re
 import time
 from pathlib import Path
 import shutil
+from typing import List
 
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -52,8 +53,14 @@ _INJECTION_PATTERNS = re.compile(
 )
 
 
+class ConversationMessage(BaseModel):
+    role: str   # 'user' or 'assistant'
+    content: str
+
+
 class Query(BaseModel):
     question: str
+    messages: List[ConversationMessage] = []
 
     @field_validator("question")
     @classmethod
@@ -351,6 +358,7 @@ async def query_documents_agentic(query: Query):
             question=query.question,
             llm=llm,
             rag_system=agentic_rag_system,
+            conversation_history=[m.model_dump() for m in query.messages],
         )
         latency_ms = (time.perf_counter() - t0) * 1000
         _log_query(query.question, result, latency_ms, document_id=current_agentic_doc_id)
@@ -390,6 +398,7 @@ async def query_documents_agentic_stream(query: Query):
                 llm=llm,
                 rag_system=agentic_rag_system,
                 result_collector=result_collector,
+                conversation_history=[m.model_dump() for m in query.messages],
             ):
                 yield token
 

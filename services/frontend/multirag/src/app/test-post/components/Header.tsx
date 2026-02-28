@@ -32,6 +32,12 @@ export const Header = ({ backendStatus, isDark, onToggleTheme }: HeaderProps) =>
         </div>
         <p className="text-sm text-foreground-dim mt-0.5">AI-powered document intelligence</p>
       </div>
+      <a
+        href="/analytics"
+        className="flex-shrink-0 text-xs text-foreground-dim hover:text-foreground transition-colors"
+      >
+        Analytics ↗
+      </a>
       <button
         onClick={onToggleTheme}
         aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
