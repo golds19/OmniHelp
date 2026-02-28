@@ -20,18 +20,18 @@ export const FileUploadSection = ({
 }: FileUploadSectionProps) => {
   return (
     <div className="space-y-4">
-      <p className="text-xs font-medium text-neutral-400 uppercase tracking-wider">Document</p>
+      <p className="text-xs font-medium text-foreground-dim uppercase tracking-wider">Document</p>
 
       <form onSubmit={onIngest} className="space-y-4">
         <label className="block cursor-pointer">
-          <div className="border-2 border-dashed border-neutral-200 rounded-lg p-10 text-center hover:border-indigo-400 transition-colors">
-            <UploadIcon className="mx-auto h-10 w-10 text-neutral-300 mb-3" />
+          <div className="border-2 border-dashed border-border rounded-xl p-10 text-center hover:border-accent/50 transition-colors bg-surface">
+            <UploadIcon className="mx-auto h-10 w-10 text-foreground-dim mb-3" />
             {file ? (
-              <span className="inline-block bg-indigo-50 text-indigo-600 text-sm px-3 py-1 rounded-full">
+              <span className="inline-block bg-accent-muted text-accent text-sm px-3 py-1 rounded-full font-medium">
                 {file.name}
               </span>
             ) : (
-              <p className="text-neutral-500 text-sm">Drop a PDF or click to browse</p>
+              <p className="text-foreground-muted text-sm">Drop a PDF or click to browse</p>
             )}
           </div>
           <input type="file" accept="application/pdf" onChange={onFileChange} className="hidden" />
@@ -49,7 +49,7 @@ export const FileUploadSection = ({
           </Button>
 
           {ingestStatus && (
-            <p className={`text-sm ${ingested ? 'text-green-600' : 'text-red-500'}`}>
+            <p className={`text-sm ${ingested ? 'text-success' : 'text-danger'}`}>
               {ingestStatus}
             </p>
           )}

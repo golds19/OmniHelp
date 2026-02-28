@@ -49,8 +49,17 @@ class CLIPEmbedder:
 
         inputs = self.processor(images=image, return_tensors="pt")
         with torch.no_grad():
-            features = self.model.get_image_features(**inputs)
-            features = features / features.norm(dim=-1, keepdim=True)
+            output = self.model.get_image_features(**inputs)
+            logger.debug(f"get_image_features returned type: {type(output).__name__}")
+            if isinstance(output, torch.Tensor):
+                features = output
+            elif hasattr(output, 'image_embeds'):
+                features = output.image_embeds
+            elif hasattr(output, 'pooler_output'):
+                features = output.pooler_output
+            else:
+                features = output[0]
+            features = torch.nn.functional.normalize(features, dim=-1)
             return features.squeeze().numpy()
 
     def embed_text(self, text: str):
@@ -71,8 +80,17 @@ class CLIPEmbedder:
             max_length=77
         )
         with torch.no_grad():
-            features = self.model.get_text_features(**inputs)
-            features = features / features.norm(dim=-1, keepdim=True)
+            output = self.model.get_text_features(**inputs)
+            logger.debug(f"get_text_features returned type: {type(output).__name__}")
+            if isinstance(output, torch.Tensor):
+                features = output
+            elif hasattr(output, 'text_embeds'):
+                features = output.text_embeds
+            elif hasattr(output, 'pooler_output'):
+                features = output.pooler_output
+            else:
+                features = output[0]
+            features = torch.nn.functional.normalize(features, dim=-1)
             return features.squeeze().numpy()
 
 

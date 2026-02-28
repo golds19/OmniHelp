@@ -36,6 +36,7 @@ class DataEmbedding:
     def process_and_embedd_docs(self):
         # loading the doc
         doc = self.process_pdf()
+        logger.info(f"PDF loaded: {len(doc)} pages")
 
         for i, page in enumerate(doc):
             # Process text
@@ -44,22 +45,30 @@ class DataEmbedding:
                 # create temporary document for splitting
                 temp_doc = Document(page_content=text, metadata={"page": i, "type": "text"})
                 text_chunks = split_pdf([temp_doc])
+                logger.info(f"Page {i}: {len(text_chunks)} text chunk(s)")
 
                 # Embed each chunk using CLIP
-                for chunk in text_chunks:
-                    embedding = self.embedder.embed_text(chunk.page_content)
-                    self.all_embeddings.append(embedding)
-                    self.all_docs.append(chunk)
+                for j, chunk in enumerate(text_chunks):
+                    try:
+                        embedding = self.embedder.embed_text(chunk.page_content)
+                        self.all_embeddings.append(embedding)
+                        self.all_docs.append(chunk)
 
-                    # Store text docs separately for BM25Retriever
-                    self.text_docs.append(chunk)
-            
+                        # Store text docs separately for BM25Retriever
+                        self.text_docs.append(chunk)
+                    except Exception as e:
+                        logger.exception(
+                            f"Error embedding text chunk {j} on page {i} "
+                            f"(length={len(chunk.page_content)})"
+                        )
+                        raise
+
             # Process images
-            # Convert PDF images to PIL format
-            # Store as Base64
-            # create CLIP embeddings for retrieval
+            images = page.get_images(full=True)
+            if images:
+                logger.info(f"Page {i}: {len(images)} image(s)")
 
-            for img_index, img in enumerate(page.get_images(full=True)):
+            for img_index, img in enumerate(images):
                 try:
                     xref = img[0]
                     base_image = doc.extract_image(xref)
@@ -67,6 +76,10 @@ class DataEmbedding:
 
                     # convert to PIL image
                     pil_image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+                    logger.debug(
+                        f"Page {i}, image {img_index}: "
+                        f"size={pil_image.size}, format={base_image.get('ext', 'unknown')}"
+                    )
 
                     # create unique identifier
                     image_id = f"page_{i}_img_{img_index}"
@@ -76,7 +89,7 @@ class DataEmbedding:
                     pil_image.save(buffered, format="PNG")
                     img_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
                     self.image_data_store[image_id] = img_base64
-                    
+
                     # Embed document using CLIP
                     embedding = self.embedder.embed_image(pil_image)
                     self.all_embeddings.append(embedding)
@@ -85,7 +98,13 @@ class DataEmbedding:
                     img_doc = Document(page_content=f"[Image: {image_id}]", metadata={"page": i, "type": "image", "image_id": image_id})
                     self.all_docs.append(img_doc)
                 except Exception as e:
-                    logger.warning(f"Error processing image on page {i}, image {img_index}: {e}")
+                    logger.exception(f"Error processing image on page {i}, image {img_index}")
                     continue
+
+        logger.info(
+            f"Processing complete: {len(self.all_docs)} docs, "
+            f"{len(self.all_embeddings)} embeddings, "
+            f"{len(self.image_data_store)} images"
+        )
         doc.close()
         return self.all_docs, self.all_embeddings, self.image_data_store, self.text_docs

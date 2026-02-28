@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Ingest Test</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: system-ui, sans-serif; max-width: 700px; margin: 40px auto; padding: 0 20px; color: #222; }
+        h1 { margin-bottom: 24px; }
+        label { display: block; font-weight: 600; margin-bottom: 4px; }
+        input[type="text"], select { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
+        .field { margin-bottom: 16px; }
+        button { padding: 10px 24px; font-size: 15px; border: none; border-radius: 4px; cursor: pointer; color: #fff; background: #2563eb; }
+        button:disabled { background: #94a3b8; cursor: not-allowed; }
+        #status { margin-top: 12px; font-size: 14px; }
+        #response { margin-top: 16px; white-space: pre-wrap; font-family: monospace; font-size: 13px; background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 4px; padding: 12px; max-height: 500px; overflow: auto; display: none; }
+        .error { color: #dc2626; }
+        .success { color: #16a34a; }
+        .note { margin-top: 24px; padding: 12px; background: #fefce8; border: 1px solid #eab308; border-radius: 4px; font-size: 13px; }
+    </style>
+</head>
+<body>
+    <h1>PDF Ingest Test Page</h1>
+
+    <div class="field">
+        <label for="baseUrl">Backend URL</label>
+        <input type="text" id="baseUrl" value="http://localhost:8000">
+    </div>
+
+    <div class="field">
+        <label for="endpoint">Endpoint</label>
+        <select id="endpoint">
+            <option value="ingest">/ingest</option>
+            <option value="ingest-agentic">/ingest-agentic</option>
+        </select>
+    </div>
+
+    <div class="field">
+        <label for="fileInput">PDF File</label>
+        <input type="file" id="fileInput" accept=".pdf">
+    </div>
+
+    <button id="uploadBtn" onclick="upload()">Upload</button>
+
+    <div id="status"></div>
+    <pre id="response"></pre>
+
+    <div class="note">
+        <strong>CORS note:</strong> This page must be served from an allowed origin.
+        Run <code>python -m http.server 3000</code> from <code>services/backend/</code>
+        and open <code>http://localhost:3000/test-ingest.html</code>.
+    </div>
+
+    <script>
+        async function upload() {
+            const fileInput = document.getElementById('fileInput');
+            const baseUrl = document.getElementById('baseUrl').value.replace(/\/+$/, '');
+            const endpoint = document.getElementById('endpoint').value;
+            const status = document.getElementById('status');
+            const response = document.getElementById('response');
+            const btn = document.getElementById('uploadBtn');
+
+            if (!fileInput.files.length) {
+                status.textContent = 'Please select a PDF file.';
+                status.className = 'error';
+                return;
+            }
+
+            const file = fileInput.files[0];
+            status.textContent = `Uploading ${file.name} (${(file.size / 1024).toFixed(1)} KB) to ${baseUrl}/${endpoint}...`;
+            status.className = '';
+            response.style.display = 'none';
+            btn.disabled = true;
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const res = await fetch(`${baseUrl}/${endpoint}`, {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                const contentType = res.headers.get('content-type') || '';
+                let body;
+                if (contentType.includes('application/json')) {
+                    body = JSON.stringify(await res.json(), null, 2);
+                } else {
+                    body = await res.text();
+                }
+
+                status.textContent = `${res.status} ${res.statusText}`;
+                status.className = res.ok ? 'success' : 'error';
+                response.textContent = body;
+                response.style.display = 'block';
+            } catch (err) {
+                status.textContent = 'Request failed';
+                status.className = 'error';
+                response.textContent = `${err.name}: ${err.message}`;
+                response.style.display = 'block';
+            } finally {
+                btn.disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>

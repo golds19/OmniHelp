@@ -50,6 +50,22 @@ export interface APIError {
   detail: string;
 }
 
+// Metadata yielded as the final streaming chunk from /query-agentic-stream
+export interface StreamingMetadata {
+  sources: DocumentSource[];
+  num_images: number;
+  num_text_chunks: number;
+  top_similarity: number;
+  confidence: number;
+  answer_source_similarity: number;
+  is_hallucination: boolean;
+  source_pages: number[];
+  agent_type: string;
+  latency_ms: number;
+}
+
+export const METADATA_DELIMITER = '\n\n__METADATA__';
+
 // Streaming state for query responses
 export interface StreamingState {
   isStreaming: boolean;

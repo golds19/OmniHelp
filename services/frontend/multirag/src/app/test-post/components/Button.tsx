@@ -8,15 +8,15 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variantStyles = {
-  primary: 'bg-indigo-600 text-white hover:bg-indigo-700 border border-indigo-600',
-  success: 'bg-indigo-600 text-white hover:bg-indigo-700 border border-indigo-600',
-  danger: 'bg-white text-neutral-700 border border-neutral-300 hover:bg-neutral-50',
+  primary: 'bg-accent text-background hover:bg-accent/90 border border-accent/30',
+  success: 'bg-accent text-background hover:bg-accent/90 border border-accent/30',
+  danger: 'bg-surface-elevated text-foreground-muted border border-border hover:border-danger hover:text-danger',
 };
 
 const spinnerStyles = {
-  primary: 'text-white',
-  success: 'text-white',
-  danger: 'text-neutral-600',
+  primary: 'text-background',
+  success: 'text-background',
+  danger: 'text-foreground-muted',
 };
 
 export const Button = ({

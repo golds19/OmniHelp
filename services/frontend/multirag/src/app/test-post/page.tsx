@@ -7,14 +7,12 @@ import { FileUploadSection } from "./components/FileUploadSection";
 import { QuerySection } from "./components/QuerySection";
 import { ResponseDisplay } from "./components/ResponseDisplay";
 import { API_BASE_URL } from "./utils/constants";
-import type { QueryResponse } from "@/types/api";
 
 type BackendStatus = 'connecting' | 'online' | 'offline';
 
 export default function TestPost() {
   const [input, setInput] = useState("");
   const [file, setFile] = useState<File | null>(null);
-  const [metadata, setMetadata] = useState<QueryResponse | null>(null);
   const [backendStatus, setBackendStatus] = useState<BackendStatus>('connecting');
 
   useEffect(() => {
@@ -24,46 +22,43 @@ export default function TestPost() {
   }, []);
 
   const { ingested, ingestStatus, isPending, ingestDocument, resetIngestStatus } = useDocumentIngest();
-  const { response, isStreaming, queryDocument, stopQuery, clearResponse } = useDocumentQuery();
+  const { response, isStreaming, metadata, queryDocument, stopQuery, clearResponse } = useDocumentQuery();
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0] || null;
     setFile(selectedFile);
     resetIngestStatus();
     clearResponse();
-    setMetadata(null);
   };
 
   const handleIngest = async (e: React.FormEvent) => {
     e.preventDefault();
     clearResponse();
-    setMetadata(null);
     await ingestDocument(file);
   };
 
   const handleQuery = async (e: React.FormEvent) => {
     e.preventDefault();
-    setMetadata(null);
     await queryDocument(input);
   };
 
   if (backendStatus === 'connecting') {
     return (
-      <main className="min-h-screen bg-neutral-50 flex items-center justify-center">
+      <main className="min-h-screen bg-background flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
-          <div className="h-5 w-5 rounded-full border-2 border-neutral-200 border-t-indigo-600 animate-spin" />
-          <p className="text-sm text-neutral-400">Connecting to backend...</p>
+          <div className="h-5 w-5 rounded-full border-2 border-border border-t-accent animate-spin" />
+          <p className="text-sm text-foreground-dim">Connecting to backend...</p>
         </div>
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen bg-neutral-50 flex justify-center pt-20 pb-16 px-6">
+    <main className="min-h-screen bg-background flex justify-center pt-20 pb-16 px-6">
       <div className="w-full max-w-2xl space-y-10">
         {backendStatus === 'offline' && (
-          <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
-            <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-amber-500" />
+          <div className="flex items-center gap-2 rounded-xl border border-warning/30 bg-warning-muted px-4 py-3 text-sm text-warning">
+            <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-warning" />
             Backend unavailable — requests may fail
           </div>
         )}

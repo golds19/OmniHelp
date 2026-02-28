@@ -185,10 +185,18 @@ async def ingest_document(file: UploadFile = File(...)):
     try:
         with temp_file.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
+        logger.info(f"[ingest] Saved upload to {temp_file} ({temp_file.stat().st_size} bytes)")
 
+        logger.info("[ingest] Starting PDF processing and embedding...")
         data_embedder = DataEmbedding(str(temp_file))
         docs, embeddings, img_store, text_docs = data_embedder.process_and_embedd_docs()
+        logger.info(
+            f"[ingest] Embedding complete: {len(docs)} docs, "
+            f"{len(embeddings)} embeddings, {len(img_store)} images, "
+            f"{len(text_docs)} text chunks"
+        )
 
+        logger.info("[ingest] Creating vector store and BM25 retriever...")
         vs = VectorStore(
             all_docs=docs,
             all_embeddings=embeddings,
@@ -199,12 +207,16 @@ async def ingest_document(file: UploadFile = File(...)):
         vectorstore      = hybrid_stores["faiss_store"]
         bm25_retriever   = hybrid_stores["bm25_retriever"]
         image_data_store = hybrid_stores["image_data_store"]
+        logger.info("[ingest] Vector store created successfully")
 
         # Persist to disk
+        logger.info("[ingest] Saving index to disk...")
         save_index(vectorstore, image_data_store, "standard")
+        logger.info("[ingest] Saving document record to SQLite...")
         current_doc_id = save_document(
             "standard", file.filename, len(text_docs), len(image_data_store)
         )
+        logger.info(f"[ingest] Document saved with id={current_doc_id}")
 
         return JSONResponse(
             content={"message": f"Successfully processed {file.filename}"},
@@ -212,6 +224,7 @@ async def ingest_document(file: UploadFile = File(...)):
         )
 
     except Exception as e:
+        logger.exception(f"[ingest] Failed to ingest {file.filename}")
         raise HTTPException(status_code=500, detail=str(e))
 
     finally:
@@ -282,21 +295,27 @@ async def ingest_document_agentic(file: UploadFile = File(...)):
     try:
         with temp_file.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
+        logger.info(f"[ingest-agentic] Saved upload to {temp_file} ({temp_file.stat().st_size} bytes)")
 
+        logger.info("[ingest-agentic] Initializing agentic RAG system...")
         agentic_rag_system.initialize(pdf_path=str(temp_file), vision_llm=llm)
+        logger.info("[ingest-agentic] Agentic RAG initialized successfully")
 
         # Persist to disk
+        logger.info("[ingest-agentic] Saving index to disk...")
         save_index(
             agentic_rag_system.vectorStore,
             agentic_rag_system.image_data_store,
             "agentic",
         )
+        logger.info("[ingest-agentic] Saving document record to SQLite...")
         current_agentic_doc_id = save_document(
             "agentic",
             file.filename,
             len(agentic_rag_system.text_docs),
             len(agentic_rag_system.image_data_store),
         )
+        logger.info(f"[ingest-agentic] Document saved with id={current_agentic_doc_id}")
 
         return JSONResponse(
             content={
@@ -307,6 +326,7 @@ async def ingest_document_agentic(file: UploadFile = File(...)):
         )
 
     except Exception as e:
+        logger.exception(f"[ingest-agentic] Failed to ingest {file.filename}")
         raise HTTPException(status_code=500, detail=str(e))
 
     finally:
@@ -362,6 +382,7 @@ async def query_documents_agentic_stream(query: Query):
     result_collector: dict = {}
 
     async def generate():
+        full_result: dict = {}
         try:
             async for token in stream_agentic_rag(
                 question=query.question,
@@ -370,16 +391,14 @@ async def query_documents_agentic_stream(query: Query):
                 result_collector=result_collector,
             ):
                 yield token
-        except Exception as e:
-            yield f"\n\nError: {str(e)}"
-        finally:
+
+            # --- Compute metrics and yield as final chunk ---
             latency_ms = (time.perf_counter() - t0) * 1000
             answer     = result_collector.get("answer", "")
             sources    = result_collector.get("sources", [])
             num_chunks = result_collector.get("num_text_chunks", 0)
             num_images = result_collector.get("num_images", 0)
 
-            # top_similarity: single FAISS k=1 lookup — no LLM cost
             top_similarity = 0.0
             try:
                 from app.rag.core.embedder import get_embedder
@@ -413,14 +432,25 @@ async def query_documents_agentic_stream(query: Query):
                 "confidence": confidence,
                 "answer_source_similarity": answer_source_sim,
                 "is_hallucination": is_hallucination,
+                "source_pages": sorted(source_pages),
+                "agent_type": "ReAct",
+                "latency_ms": round(latency_ms, 1),
             }
-            try:
-                _log_query(
-                    query.question, full_result, latency_ms,
-                    document_id=current_agentic_doc_id,
-                )
-            except Exception as e:
-                logger.warning(f"Failed to log streaming query: {e}")
+
+            yield f"\n\n__METADATA__{json.dumps(full_result)}"
+
+        except Exception as e:
+            yield f"\n\nError: {str(e)}"
+        finally:
+            if full_result:
+                try:
+                    _log_query(
+                        query.question, full_result,
+                        full_result.get("latency_ms", (time.perf_counter() - t0) * 1000),
+                        document_id=current_agentic_doc_id,
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to log streaming query: {e}")
 
     return StreamingResponse(generate(), media_type="text/plain")
 
