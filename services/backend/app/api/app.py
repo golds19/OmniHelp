@@ -104,7 +104,7 @@ app = FastAPI(title="Lifeforge RAG API")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=AppConfig.CORS_ORIGINS,
-    allow_origin_regex=r"https://.*\.up\.railway\.app",
+    allow_origin_regex=r"https://(.*\.up\.railway\.app|.*\.vercel\.app)",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
