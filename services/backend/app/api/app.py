@@ -26,6 +26,7 @@ from app.rag.core.database import (
     get_recent_logs,
 )
 from app.rag.core.storage import save_index, load_index
+from app.rag.core.embedder import get_embedder
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +133,10 @@ current_agentic_doc_id = None  # SQLite document id for /query-agentic logs
 async def startup_event():
     global vectorstore, bm25_retriever, image_data_store, current_doc_id
     global current_agentic_doc_id
+
+    logger.info("Pre-loading CLIP model...")
+    get_embedder()
+    logger.info("CLIP model ready.")
 
     init_db()
 

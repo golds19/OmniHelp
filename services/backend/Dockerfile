@@ -23,6 +23,12 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir "torch==2.6.0+cpu" --index-url https://download.pytorch.org/whl/cpu && \
     pip install --no-cache-dir -r requirements.txt
 
+# Pre-download CLIP model weights so Railway never fetches them at request time
+RUN python -c "\
+from transformers import CLIPModel, CLIPProcessor; \
+CLIPModel.from_pretrained('openai/clip-vit-base-patch32'); \
+CLIPProcessor.from_pretrained('openai/clip-vit-base-patch32')"
+
 # Download NLTK data (required for tokenization)
 RUN python -c "import nltk; nltk.download('punkt'); nltk.download('stopwords')"
 

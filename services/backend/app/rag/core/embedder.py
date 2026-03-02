@@ -9,6 +9,7 @@ import logging
 from functools import lru_cache
 from dataclasses import dataclass, field
 import torch
+import transformers
 from transformers import CLIPProcessor, CLIPModel
 from PIL import Image
 
@@ -27,8 +28,13 @@ class CLIPEmbedder:
     def __post_init__(self):
         """Initialize the CLIP model and processor after dataclass initialization."""
         logger.info(f"Loading CLIP model: {self.model_name}")
+        # Suppress the benign "UNEXPECTED position_ids" load report emitted by
+        # newer transformers when the checkpoint pre-dates dynamic position buffers.
+        prev_verbosity = transformers.logging.get_verbosity()
+        transformers.logging.set_verbosity_error()
         self.model = CLIPModel.from_pretrained(self.model_name)
         self.processor = CLIPProcessor.from_pretrained(self.model_name)
+        transformers.logging.set_verbosity(prev_verbosity)
         self.model.eval()
         logger.info("CLIP model loaded successfully")
 
