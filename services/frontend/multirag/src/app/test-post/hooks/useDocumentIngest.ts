@@ -15,6 +15,11 @@ export const useDocumentIngest = () => {
     setIsPending(true);
 
     try {
+      const MAX_SIZE_MB = 10;
+      if (file.size > MAX_SIZE_MB * 1024 * 1024) {
+        throw new Error(`File too large. Maximum size is ${MAX_SIZE_MB} MB.`);
+      }
+
       const formData = new FormData();
       formData.append('file', file);
 
@@ -31,8 +36,8 @@ export const useDocumentIngest = () => {
       } else {
         setIngestStatus(data.detail || 'Ingestion failed.');
       }
-    } catch {
-      setIngestStatus(MESSAGES.INGEST_ERROR);
+    } catch (err) {
+      setIngestStatus(err instanceof Error ? err.message : MESSAGES.INGEST_ERROR);
     } finally {
       setIsPending(false);
     }

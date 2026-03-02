@@ -3,11 +3,14 @@ import logging
 import re
 import time
 from pathlib import Path
-import shutil
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, Request, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 from pydantic import BaseModel, field_validator
 from langchain_openai import ChatOpenAI
 
@@ -29,6 +32,10 @@ from app.rag.core.storage import save_index, load_index
 from app.rag.core.embedder import get_embedder
 
 logger = logging.getLogger(__name__)
+
+limiter = Limiter(key_func=get_remote_address)
+
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
 
 
 # ---------------------------------------------------------------------------
@@ -101,6 +108,10 @@ def _log_query(query: str, result: dict, latency_ms: float, document_id=None):
 # ---------------------------------------------------------------------------
 
 app = FastAPI(title="Lifeforge RAG API")
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
@@ -177,7 +188,8 @@ def ping():
 # ---------------------------------------------------------------------------
 
 @app.post("/ingest")
-async def ingest_document(file: UploadFile = File(...)):
+@limiter.limit("3/day")
+async def ingest_document(request: Request, file: UploadFile = File(...)):
     """Ingest a PDF into the standard (non-agentic) RAG system."""
     global vectorstore, bm25_retriever, image_data_store, current_doc_id
 
@@ -189,8 +201,17 @@ async def ingest_document(file: UploadFile = File(...)):
     temp_file = temp_dir / file.filename
 
     try:
+        size = 0
+        chunks = []
+        while chunk := await file.read(1024 * 1024):  # 1 MB chunks
+            size += len(chunk)
+            if size > MAX_UPLOAD_BYTES:
+                raise HTTPException(status_code=413, detail="File too large. Maximum size is 10 MB.")
+            chunks.append(chunk)
+
         with temp_file.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+            for chunk in chunks:
+                buffer.write(chunk)
         logger.info(f"[ingest] Saved upload to {temp_file} ({temp_file.stat().st_size} bytes)")
 
         logger.info("[ingest] Starting PDF processing and embedding...")
@@ -229,6 +250,9 @@ async def ingest_document(file: UploadFile = File(...)):
             status_code=200,
         )
 
+    except HTTPException:
+        raise
+
     except Exception as e:
         logger.exception(f"[ingest] Failed to ingest {file.filename}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -240,7 +264,8 @@ async def ingest_document(file: UploadFile = File(...)):
 
 
 @app.post("/query")
-async def query_documents(query: Query):
+@limiter.limit("3/day")
+async def query_documents(request: Request, query: Query):
     """Query the standard RAG system."""
     global vectorstore, bm25_retriever, image_data_store, current_doc_id
 
@@ -287,7 +312,8 @@ async def query_documents(query: Query):
 # ---------------------------------------------------------------------------
 
 @app.post("/ingest-agentic")
-async def ingest_document_agentic(file: UploadFile = File(...)):
+@limiter.limit("3/day")
+async def ingest_document_agentic(request: Request, file: UploadFile = File(...)):
     """Ingest a PDF into the agentic RAG system."""
     global current_agentic_doc_id
 
@@ -299,8 +325,17 @@ async def ingest_document_agentic(file: UploadFile = File(...)):
     temp_file = temp_dir / file.filename
 
     try:
+        size = 0
+        chunks = []
+        while chunk := await file.read(1024 * 1024):  # 1 MB chunks
+            size += len(chunk)
+            if size > MAX_UPLOAD_BYTES:
+                raise HTTPException(status_code=413, detail="File too large. Maximum size is 10 MB.")
+            chunks.append(chunk)
+
         with temp_file.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+            for chunk in chunks:
+                buffer.write(chunk)
         logger.info(f"[ingest-agentic] Saved upload to {temp_file} ({temp_file.stat().st_size} bytes)")
 
         logger.info("[ingest-agentic] Initializing agentic RAG system...")
@@ -330,6 +365,9 @@ async def ingest_document_agentic(file: UploadFile = File(...)):
             },
             status_code=200,
         )
+
+    except HTTPException:
+        raise
 
     except Exception as e:
         logger.exception(f"[ingest-agentic] Failed to ingest {file.filename}")
@@ -376,7 +414,8 @@ async def query_documents_agentic(query: Query):
 
 
 @app.post("/query-agentic-stream")
-async def query_documents_agentic_stream(query: Query):
+@limiter.limit("3/day")
+async def query_documents_agentic_stream(request: Request, query: Query):
     """Streaming endpoint for the agentic RAG system."""
     if not agentic_rag_system.is_initialized():
         raise HTTPException(
