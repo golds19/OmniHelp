@@ -1,6 +1,5 @@
 langchain>=0.3,<1.0
 langchain-text-splitters>=0.3,<1.0
-langchain-groq>=0.2,<1.0
 faiss-cpu
 langchain-openai>=0.2,<1.0
 langchain-community>=0.3,<1.0
@@ -8,16 +7,12 @@ pydantic
 python-dotenv
 Pillow
 numpy
-torch
 transformers
 pymupdf
-langchain-experimental>=0.3,<1.0
-langsmith
 fastapi
 uvicorn
 python-multipart
 langgraph
-mcp[cli]
 httpx
 rank-bm25
 nltk
