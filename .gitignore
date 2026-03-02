@@ -125,6 +125,8 @@ notebooks/
 # --- Deployment exceptions (override catch-all patterns above) ---
 !docker-compose.yml
 !docker-compose.dev.yml
+!docker-compose.lock.yml
 !pyproject.toml
 !README.md
 !DOCKER.md
+!services/backend/railway.toml

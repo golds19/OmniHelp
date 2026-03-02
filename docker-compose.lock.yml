@@ -1,0 +1,27 @@
+# Run this ONCE to generate a pinned requirements.txt for the backend.
+#
+# Usage (from repo root):
+#   docker compose -f docker-compose.lock.yml run --rm lock
+#
+# This will write services/backend/requirements-lock.txt.
+# Review it, then replace requirements.txt:
+#   mv services/backend/requirements-lock.txt services/backend/requirements.txt
+#
+# Re-run whenever you intentionally upgrade a dependency.
+
+services:
+  lock:
+    image: python:3.11-slim
+    working_dir: /app
+    volumes:
+      - ./services/backend:/app
+    command: >
+      bash -c "
+        echo '>>> Installing torch (CPU)...' &&
+        pip install --no-cache-dir 'torch==2.5.1+cpu' --index-url https://download.pytorch.org/whl/cpu &&
+        echo '>>> Installing requirements.txt...' &&
+        pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu -r requirements.txt &&
+        echo '>>> Writing requirements-lock.txt...' &&
+        pip freeze | grep -v '^torch' > requirements-lock.txt &&
+        echo '>>> Done! Review requirements-lock.txt then rename it to requirements.txt'
+      "
