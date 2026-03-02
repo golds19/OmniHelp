@@ -14,9 +14,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching
-# requirements.in  = human-readable direct deps
-# requirements.txt = full pinned lock file (machine-generated)
-COPY requirements.in requirements.txt ./
+COPY requirements.txt .
 
 # Create virtual environment and install dependencies
 RUN python -m venv /opt/venv
