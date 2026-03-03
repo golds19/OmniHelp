@@ -1,4 +1,9 @@
 import { useState, useRef, useCallback } from 'react';
+
+export interface HistoryEntry {
+  role: 'user' | 'assistant';
+  content: string;
+}
 import { API_ENDPOINTS, MESSAGES } from '../utils/constants';
 import type { QueryLog, StreamingMetadata } from '@/types/api';
 import { METADATA_DELIMITER } from '@/types/api';
@@ -27,6 +32,7 @@ export const useDocumentQuery = () => {
   const [response, setResponse] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [queryLog, setQueryLog] = useState<QueryLog | null>(null);
+  const [conversationHistory, setConversationHistory] = useState<HistoryEntry[]>([]);
   const abortControllerRef = useRef<AbortController | null>(null);
   const lastUpdateRef = useRef<number>(0);
   const pendingUpdateRef = useRef<string>('');
@@ -49,11 +55,13 @@ export const useDocumentQuery = () => {
 
     abortControllerRef.current = new AbortController();
 
+    const messagesPayload = conversationHistory.length > 0 ? conversationHistory : undefined;
+
     try {
       const res = await fetch(API_ENDPOINTS.QUERY_STREAM, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question, session_id: sessionId }),
+        body: JSON.stringify({ question, session_id: sessionId, messages: messagesPayload }),
         signal: abortControllerRef.current.signal,
       });
 
@@ -93,8 +101,9 @@ export const useDocumentQuery = () => {
 
       // Parse metadata from the final content
       const delimIdx = fullAnswer.indexOf(METADATA_DELIMITER);
+      let answerText = fullAnswer;
       if (delimIdx !== -1) {
-        const answerText = fullAnswer.substring(0, delimIdx);
+        answerText = fullAnswer.substring(0, delimIdx);
         const metaJson = fullAnswer.substring(delimIdx + METADATA_DELIMITER.length);
         setResponse(answerText);
         try {
@@ -106,6 +115,13 @@ export const useDocumentQuery = () => {
       } else {
         setResponse(fullAnswer);
       }
+
+      // Append both turns to conversation history
+      setConversationHistory(prev => [
+        ...prev,
+        { role: 'user', content: question },
+        { role: 'assistant', content: answerText },
+      ]);
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') {
         // Stream cancelled by user — no action needed
@@ -133,12 +149,18 @@ export const useDocumentQuery = () => {
     setQueryLog(null);
   };
 
+  const clearHistory = () => {
+    setConversationHistory([]);
+  };
+
   return {
     response,
     isStreaming,
     queryLog,
+    conversationHistory,
     queryDocument,
     stopQuery,
     clearResponse,
+    clearHistory,
   };
 };

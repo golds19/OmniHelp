@@ -7,7 +7,7 @@ from langchain_core.language_models import BaseChatModel
 from ..core.rag_manager import MultiModalRAGSystem
 from ..core.config import HybridSearchConfig
 from ..core.utils import filter_documents_by_type
-from .query_enhancer import enhance_query, decompose_query
+from .query_enhancer import enhance_query, decompose_query, generate_hypothetical_answer
 
 
 def create_rag_retriever_tool(rag_system: MultiModalRAGSystem) -> StructuredTool:
@@ -228,6 +228,78 @@ def create_query_decomposer_tool(llm: BaseChatModel) -> StructuredTool:
     )
 
 
+def create_hyde_retriever_tool(rag_system: MultiModalRAGSystem, llm: BaseChatModel) -> StructuredTool:
+    """
+    Create a LangChain tool for HyDE (Hypothetical Document Embeddings) retrieval.
+
+    Args:
+        rag_system: The MultiModalRAGSystem instance
+        llm: The language model to use for generating hypothetical answers
+
+    Returns:
+        Tool: LangChain tool for HyDE-based retrieval
+    """
+
+    def hyde_search(query: str) -> str:
+        """
+        Generate a hypothetical answer and use it to retrieve relevant document passages.
+        Use this when the query is vague or high-level (e.g. 'what are the main findings?').
+
+        Args:
+            query: The vague or high-level question
+
+        Returns:
+            Retrieved context based on the hypothetical answer
+        """
+        try:
+            hypothetical = generate_hypothetical_answer(query, llm)
+            result = rag_system.query(question=hypothetical, k=5)
+
+            retrieved_docs = result["retrieved_docs"]
+            sources = result["sources"]
+
+            if not retrieved_docs:
+                return "No relevant information found in the document."
+
+            context_parts = []
+
+            text_docs, image_docs = filter_documents_by_type(retrieved_docs)
+            if text_docs:
+                context_parts.append("Text Content:")
+                for doc in text_docs:
+                    page = doc.metadata.get("page", "N/A")
+                    content = doc.page_content.strip()
+                    context_parts.append(f"\n[Page {page}]: {content}")
+
+            if image_docs:
+                context_parts.append("\n\nImages Found:")
+                for doc in image_docs:
+                    page = doc.metadata.get("page", "N/A")
+                    image_id = doc.metadata.get("image_id", "N/A")
+                    context_parts.append(f"\n[Page {page}]: Image {image_id}")
+
+            context_parts.append(
+                f"\n\n[Retrieved {result['num_text_chunks']} text chunks and "
+                f"{result['num_images']} images from pages: "
+                f"{', '.join(set(str(s['page']) for s in sources))}]"
+            )
+
+            return "\n".join(context_parts)
+
+        except Exception as e:
+            return f"Error performing HyDE search: {str(e)}"
+
+    return StructuredTool.from_function(
+        func=hyde_search,
+        name="hyde_search",
+        description=(
+            "Use when the query is vague or high-level (e.g. 'what are the main findings?'). "
+            "Generates a hypothetical answer and uses it to find the most relevant passages. "
+            "Do NOT use for specific lookups like 'Figure 3' or exact terminology — use search_document instead."
+        ),
+    )
+
+
 def get_agent_tools(rag_system: MultiModalRAGSystem, llm: Optional[BaseChatModel] = None) -> list:
     """
     Get all tools for the agent.
@@ -243,6 +315,7 @@ def get_agent_tools(rag_system: MultiModalRAGSystem, llm: Optional[BaseChatModel
 
     # Add query enhancement tools if LLM is provided and expansion is enabled
     if llm is not None and HybridSearchConfig.QUERY_EXPANSION_ENABLED:
+        tools.append(create_hyde_retriever_tool(rag_system, llm))
         tools.append(create_query_enhancer_tool(llm))
         tools.append(create_query_decomposer_tool(llm))
 

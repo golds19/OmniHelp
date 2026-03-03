@@ -22,6 +22,7 @@ def create_agent_prompt() -> ChatPromptTemplate:
     return ChatPromptTemplate.from_messages([
         ("system", """You are an intelligent assistant helping users understand PDF documents.
 You have access to tools that can search through document content including text and images.
+You remember the conversation history and can reference previous exchanges when relevant.
 
 Important guidelines:
 - Always search the document first before answering questions
@@ -30,6 +31,7 @@ Important guidelines:
 - If you find relevant images, mention them in your answer
 - Be concise but thorough
 - If the document doesn't contain the answer, say so clearly"""),
+        MessagesPlaceholder(variable_name="chat_history", optional=True),
         ("human", "{input}"),
         MessagesPlaceholder(variable_name="agent_scratchpad"),
     ])
@@ -83,10 +85,11 @@ def agent_node(state: AgenticRAGState, agent_executor: AgentExecutor) -> Agentic
         raise ValueError("No messages in state")
 
     last_message = messages[-1]
+    chat_history = messages[:-1]  # all prior messages
     question = last_message.content if hasattr(last_message, "content") else str(last_message)
 
     # Run the agent
-    result = agent_executor.invoke({"input": question})
+    result = agent_executor.invoke({"input": question, "chat_history": chat_history})
 
     # Extract the answer and intermediate steps
     answer = result.get("output", "")

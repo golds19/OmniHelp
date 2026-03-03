@@ -1,11 +1,14 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useDocumentIngest } from "./hooks/useDocumentIngest";
 import { useDocumentQuery } from "./hooks/useDocumentQuery";
+import { useDocumentLibrary } from "./hooks/useDocumentLibrary";
 import { Header } from "./components/Header";
 import { FileUploadSection } from "./components/FileUploadSection";
 import { QuerySection } from "./components/QuerySection";
 import { ResponseDisplay } from "./components/ResponseDisplay";
+import { DocumentSidebar } from "./components/DocumentSidebar";
+import { ConversationHistory } from "./components/ConversationHistory";
 import { API_BASE_URL } from "./utils/constants";
 
 type BackendStatus = 'connecting' | 'online' | 'offline';
@@ -15,6 +18,7 @@ export default function TestPost() {
   const [file, setFile] = useState<File | null>(null);
   const [backendStatus, setBackendStatus] = useState<BackendStatus>('connecting');
   const [isDark, setIsDark] = useState(true);
+  const uploadSectionRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem('theme');
@@ -37,7 +41,11 @@ export default function TestPost() {
   }, []);
 
   const { ingested, ingestStatus, isPending, sessionId, ingestDocument, resetIngestStatus } = useDocumentIngest();
-  const { response, isStreaming, queryLog, queryDocument, stopQuery, clearResponse } = useDocumentQuery();
+  const { response, isStreaming, queryLog, conversationHistory, queryDocument, stopQuery, clearResponse, clearHistory } = useDocumentQuery();
+  const library = useDocumentLibrary();
+
+  // Active session: prefer library's activeSessionId, fall back to freshly ingested sessionId
+  const activeSessionId = library.activeSessionId ?? sessionId;
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0] || null;
@@ -46,16 +54,36 @@ export default function TestPost() {
     clearResponse();
   };
 
+  // When a new sessionId is assigned after ingest, register it in the library
+  const prevSessionIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (sessionId && sessionId !== prevSessionIdRef.current && file) {
+      library.addDocument(sessionId, file.name);
+      prevSessionIdRef.current = sessionId;
+    }
+  }, [sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleIngest = async (e: React.FormEvent) => {
     e.preventDefault();
     clearResponse();
+    clearHistory();
     await ingestDocument(file);
   };
 
   const handleQuery = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!sessionId) return;
-    await queryDocument(input, sessionId);
+    if (!activeSessionId) return;
+    await queryDocument(input, activeSessionId);
+  };
+
+  const handleSelectDocument = (session_id: string) => {
+    library.selectDocument(session_id);
+    clearResponse();
+    clearHistory();
+  };
+
+  const handleNewUpload = () => {
+    uploadSectionRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
   if (backendStatus === 'connecting') {
@@ -71,44 +99,63 @@ export default function TestPost() {
 
   return (
     <main className="min-h-screen bg-background flex justify-center pt-12 pb-20 px-4">
-      <div className="w-full max-w-3xl">
-        <div className="bg-surface rounded-2xl shadow-md border border-border p-8 space-y-8">
-          <Header backendStatus={backendStatus} isDark={isDark} onToggleTheme={toggleTheme} />
+      <div className="w-full max-w-5xl flex gap-6 items-start">
+        <DocumentSidebar
+          documents={library.documents}
+          activeSessionId={library.activeSessionId}
+          onSelect={handleSelectDocument}
+          onRemove={library.removeDocument}
+          onNewUpload={handleNewUpload}
+        />
 
-          <div className="border-t border-border" />
+        <div className="flex-1 min-w-0">
+          <div className="bg-surface rounded-2xl shadow-md border border-border p-8 space-y-8">
+            <Header backendStatus={backendStatus} isDark={isDark} onToggleTheme={toggleTheme} />
 
-          <FileUploadSection
-            file={file}
-            isPending={isPending}
-            ingested={ingested}
-            ingestStatus={ingestStatus}
-            onFileChange={handleFileChange}
-            onIngest={handleIngest}
-          />
+            <div className="border-t border-border" />
 
-          <div className="border-t border-border" />
-
-          <QuerySection
-            input={input}
-            isPending={isPending}
-            ingested={ingested}
-            isStreaming={isStreaming}
-            onInputChange={setInput}
-            onQuery={handleQuery}
-            onStop={stopQuery}
-          />
-
-          {(response || ingested) && (
-            <>
-              <div className="border-t border-border" />
-              <ResponseDisplay
-                response={response}
-                queryLog={queryLog}
-                isStreaming={isStreaming}
+            <div ref={uploadSectionRef}>
+              <FileUploadSection
+                file={file}
+                isPending={isPending}
                 ingested={ingested}
+                ingestStatus={ingestStatus}
+                onFileChange={handleFileChange}
+                onIngest={handleIngest}
               />
-            </>
-          )}
+            </div>
+
+            <div className="border-t border-border" />
+
+            <QuerySection
+              input={input}
+              isPending={isPending}
+              ingested={!!activeSessionId}
+              isStreaming={isStreaming}
+              onInputChange={setInput}
+              onQuery={handleQuery}
+              onStop={stopQuery}
+            />
+
+            {conversationHistory.length > 0 && (
+              <>
+                <div className="border-t border-border" />
+                <ConversationHistory history={conversationHistory} onClear={clearHistory} />
+              </>
+            )}
+
+            {(response || !!activeSessionId) && (
+              <>
+                <div className="border-t border-border" />
+                <ResponseDisplay
+                  response={response}
+                  queryLog={queryLog}
+                  isStreaming={isStreaming}
+                  ingested={!!activeSessionId}
+                />
+              </>
+            )}
+          </div>
         </div>
       </div>
     </main>

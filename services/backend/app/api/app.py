@@ -6,7 +6,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, List, Literal, Optional
 
 from fastapi import FastAPI, Request, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -64,9 +64,15 @@ _INJECTION_PATTERNS = re.compile(
 )
 
 
+class Message(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
+
 class Query(BaseModel):
     question: str
     session_id: str
+    messages: Optional[List[Message]] = None  # prior turns, not including current question
 
     @field_validator("question")
     @classmethod
@@ -460,6 +466,7 @@ async def query_documents_agentic(request: Request, query: Query):
             question=query.question,
             llm=llm,
             rag_system=ras,
+            messages=[m.model_dump() for m in query.messages] if query.messages else None,
         )
         latency_ms = (time.perf_counter() - t0) * 1000
         _log_query(query.question, result, latency_ms, document_id=None)
@@ -502,6 +509,7 @@ async def query_documents_agentic_stream(request: Request, query: Query):
                 llm=llm,
                 rag_system=ras,
                 result_collector=result_collector,
+                messages=[m.model_dump() for m in query.messages] if query.messages else None,
             ):
                 yield token
 

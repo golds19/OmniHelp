@@ -4,12 +4,25 @@ LangGraph builder for the Agentic RAG system.
 
 from langgraph.graph import StateGraph, END
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage
-from typing import AsyncGenerator, Optional
+from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
+from typing import AsyncGenerator, List, Optional
 from .rag_state import AgenticRAGState
 from ..core.rag_manager import MultiModalRAGSystem
 from .agent_tools import get_agent_tools
 from .react_node import create_agent_executor, agent_node
+
+
+def _build_messages(question: str, history: Optional[List[dict]]) -> List[BaseMessage]:
+    """Convert history dicts + current question into LangChain message objects."""
+    result: List[BaseMessage] = []
+    if history:
+        for m in history:
+            if m["role"] == "user":
+                result.append(HumanMessage(content=m["content"]))
+            elif m["role"] == "assistant":
+                result.append(AIMessage(content=m["content"]))
+    result.append(HumanMessage(content=question))
+    return result
 
 
 def build_agentic_rag_graph(
@@ -58,7 +71,8 @@ def build_agentic_rag_graph(
 def run_agentic_rag(
     question: str,
     llm: ChatOpenAI,
-    rag_system: MultiModalRAGSystem
+    rag_system: MultiModalRAGSystem,
+    messages: Optional[List[dict]] = None,
 ) -> dict:
     """
     Run the agentic RAG workflow with a question.
@@ -67,6 +81,7 @@ def run_agentic_rag(
         question: The user's question
         llm: The language model to use
         rag_system: The initialized MultiModalRAGSystem
+        messages: Optional prior conversation turns as list of {role, content} dicts
 
     Returns:
         Dict containing answer and metadata
@@ -76,7 +91,7 @@ def run_agentic_rag(
 
     # Create initial state
     initial_state = {
-        "messages": [HumanMessage(content=question)],
+        "messages": _build_messages(question, messages),
         "retrieved_docs": [],
         "answer": "",
         "sources": [],
@@ -100,6 +115,7 @@ async def stream_agentic_rag(
     llm: ChatOpenAI,
     rag_system: MultiModalRAGSystem,
     result_collector: Optional[dict] = None,
+    messages: Optional[List[dict]] = None,
 ) -> AsyncGenerator[str, None]:
     """
     Stream tokens from the agentic RAG workflow.
@@ -111,6 +127,7 @@ async def stream_agentic_rag(
         result_collector: Optional mutable dict populated with the final graph state
                           (answer, sources, num_images, num_text_chunks) after all
                           tokens have been yielded. Used by the endpoint for logging.
+        messages: Optional prior conversation turns as list of {role, content} dicts
 
     Yields:
         String tokens as they are generated
@@ -118,7 +135,7 @@ async def stream_agentic_rag(
     graph = build_agentic_rag_graph(llm, rag_system)
 
     initial_state = {
-        "messages": [HumanMessage(content=question)],
+        "messages": _build_messages(question, messages),
         "retrieved_docs": [],
         "answer": "",
         "sources": [],
