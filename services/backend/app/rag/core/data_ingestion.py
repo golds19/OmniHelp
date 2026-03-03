@@ -7,7 +7,7 @@ from typing import List, Dict, Optional
 from PIL import Image
 from langchain_core.documents import Document
 from .pdf_handler import load_pdf, split_pdf
-from .embedder import CLIPEmbedder, get_embedder
+from .embedder import CLIPEmbedder, TextEmbedder, get_embedder, get_text_embedder
 
 logger = logging.getLogger(__name__)
 
@@ -16,18 +16,24 @@ logger = logging.getLogger(__name__)
 class DataEmbedding:
     """
     Handles PDF processing and embedding generation for text and images.
+
+    Text chunks are embedded with sentence-transformers (no 77-token limit).
+    Images are embedded with CLIP (512-dim, for cross-modal retrieval).
     """
     pdf_path: str
-    embedder: Optional[CLIPEmbedder] = None
+    embedder: Optional[CLIPEmbedder] = None        # CLIP — images only
+    text_embedder: Optional[TextEmbedder] = None   # sentence-transformers — text chunks
     all_docs: List = field(default_factory=list)
     all_embeddings: List = field(default_factory=list)
     image_data_store: Dict = field(default_factory=dict)
     text_docs: List = field(default_factory=list)  # Text documents only for BM25Retriever
 
     def __post_init__(self):
-        """Initialize the CLIPEmbedder instance after dataclass initialization."""
+        """Initialize embedder instances after dataclass initialization."""
         if self.embedder is None:
             self.embedder = get_embedder()
+        if self.text_embedder is None:
+            self.text_embedder = get_text_embedder()
 
     def process_pdf(self):
         doc = load_pdf(self.pdf_path)
@@ -47,10 +53,10 @@ class DataEmbedding:
                 text_chunks = split_pdf([temp_doc])
                 logger.info(f"Page {i}: {len(text_chunks)} text chunk(s)")
 
-                # Embed each chunk using CLIP
+                # Embed each chunk using sentence-transformers (no 77-token limit)
                 for j, chunk in enumerate(text_chunks):
                     try:
-                        embedding = self.embedder.embed_text(chunk.page_content)
+                        embedding = self.text_embedder.encode(chunk.page_content)
                         self.all_embeddings.append(embedding)
                         self.all_docs.append(chunk)
 

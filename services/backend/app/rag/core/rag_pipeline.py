@@ -19,44 +19,49 @@ class MultiModalRAG:
     Supports both dense-only and hybrid (BM25 + Dense) search modes.
     """
     query: str
-    vectorStore: FAISS
+    text_vectorStore: FAISS
     image_data_store: Dict
     llm: ChatOpenAI
     k: int = 5
     bm25_retriever: Optional[BM25Retriever] = None
+    image_vectorStore: Optional[FAISS] = None
     use_hybrid: bool = True
 
-    def generate(self):
+    def generate(self) -> Dict:
         """
         Main pipeline for multimodal RAG.
-        Supports both hybrid (BM25 + Dense) and dense-only search.
 
         Returns:
-            Dict: Contains answer, sources, metadata, confidence, top_similarity,
-                  answer_source_similarity, and is_hallucination
+            Dict with answer, sources, metadata, confidence, top_similarity,
+            answer_source_similarity, and is_hallucination.
         """
-        # Retrieve relevant documents
         retriever = MultiModalRetrieval(
             query=self.query,
-            vectorStore=self.vectorStore,
+            text_vectorStore=self.text_vectorStore,
+            image_vectorStore=self.image_vectorStore,
             image_data_store=self.image_data_store,
             k=self.k,
             bm25_retriever=self.bm25_retriever,
-            use_hybrid=self.use_hybrid
+            use_hybrid=self.use_hybrid,
         )
         retrieval_result = retriever.retrieve_multimodal()
         context_docs = retrieval_result["docs"]
         top_similarity = retrieval_result["top_similarity"]
 
-        # Log retrieved context info
-        logger.debug(f"Retrieved {len(context_docs)} documents for context (top_similarity={top_similarity:.3f})")
+        logger.debug(
+            f"Retrieved {len(context_docs)} documents for context "
+            f"(top_similarity={top_similarity:.3f})"
+        )
 
         text_docs, image_docs = filter_documents_by_type(context_docs)
         num_text_chunks = len(text_docs)
 
         # Guardrail: reject queries with insufficient context
         if top_similarity < HybridSearchConfig.MIN_SIMILARITY_THRESHOLD:
-            logger.info(f"Query rejected: top_similarity {top_similarity:.3f} < threshold {HybridSearchConfig.MIN_SIMILARITY_THRESHOLD}")
+            logger.info(
+                f"Query rejected: top_similarity {top_similarity:.3f} "
+                f"< threshold {HybridSearchConfig.MIN_SIMILARITY_THRESHOLD}"
+            )
             return {
                 "answer": "I don't have enough information in the uploaded documents to answer this question.",
                 "sources": [],
@@ -68,7 +73,6 @@ class MultiModalRAG:
                 "is_hallucination": False,
             }
 
-        # Create multimodal message and call LLM
         message = retriever.create_multimodal_message(context_docs)
         response = self.llm.invoke([message])
 
@@ -78,14 +82,17 @@ class MultiModalRAG:
 
         if is_hallucination:
             logger.warning(
-                f"Hallucination flagged: answer_source_similarity {answer_source_similarity:.3f} "
-                f"< threshold {HybridSearchConfig.HALLUCINATION_THRESHOLD}"
+                f"Hallucination flagged: answer_source_similarity "
+                f"{answer_source_similarity:.3f} < threshold "
+                f"{HybridSearchConfig.HALLUCINATION_THRESHOLD}"
             )
 
         return {
             "answer": response.content,
-            "sources": [{"page": doc.metadata["page"], "type": doc.metadata["type"]}
-                       for doc in context_docs],
+            "sources": [
+                {"page": doc.metadata["page"], "type": doc.metadata["type"]}
+                for doc in context_docs
+            ],
             "num_images": len(image_docs),
             "num_text_chunks": num_text_chunks,
             "confidence": confidence,

@@ -109,6 +109,64 @@ class TestCLIPEmbedder:
         assert np.isclose(l2_norm, 1.0, atol=1e-5)
 
 
+class TestGetTextEmbedder:
+    """Tests for the singleton get_text_embedder function."""
+
+    def test_get_text_embedder_returns_singleton(self):
+        """Test that get_text_embedder returns the same instance on multiple calls."""
+        from app.rag.core.embedder import get_text_embedder
+        get_text_embedder.cache_clear()
+
+        with patch('app.rag.core.embedder.TextEmbedder') as MockTextEmbedder:
+            mock_instance = MagicMock()
+            MockTextEmbedder.return_value = mock_instance
+
+            embedder1 = get_text_embedder()
+            embedder2 = get_text_embedder()
+
+            assert embedder1 is embedder2
+            assert MockTextEmbedder.call_count == 1
+
+        get_text_embedder.cache_clear()
+
+
+class TestTextEmbedder:
+    """Tests for TextEmbedder via the MockTextEmbedder fixture."""
+
+    def test_encode_returns_384_dim(self, mock_text_embedder):
+        """Test that encode returns a 384-dimensional vector."""
+        embedding = mock_text_embedder.encode("test query")
+
+        assert isinstance(embedding, np.ndarray)
+        assert embedding.shape == (384,)
+        assert embedding.dtype == np.float32
+
+    def test_encode_is_normalized(self, mock_text_embedder):
+        """Test that encoded vectors are L2 normalized."""
+        embedding = mock_text_embedder.encode("test query for normalization")
+        assert np.isclose(np.linalg.norm(embedding), 1.0, atol=1e-5)
+
+    def test_encode_deterministic(self, mock_text_embedder):
+        """Test that the same text produces the same embedding."""
+        text = "deterministic test"
+        e1 = mock_text_embedder.encode(text)
+        e2 = mock_text_embedder.encode(text)
+        np.testing.assert_array_almost_equal(e1, e2)
+
+    def test_encode_different_texts_differ(self, mock_text_embedder):
+        """Test that different texts produce different embeddings."""
+        e1 = mock_text_embedder.encode("machine learning")
+        e2 = mock_text_embedder.encode("deep learning")
+        assert not np.allclose(e1, e2)
+
+    def test_encode_batch_returns_correct_shape(self, mock_text_embedder):
+        """Test that encode_batch returns (N, 384) array."""
+        texts = ["text one", "text two", "text three"]
+        batch = mock_text_embedder.encode_batch(texts)
+        assert isinstance(batch, np.ndarray)
+        assert batch.shape == (3, 384)
+
+
 class TestCLIPEmbeddingWrapper:
     """Tests for the LangChain-compatible CLIP embedding wrapper."""
 

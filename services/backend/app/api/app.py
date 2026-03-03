@@ -29,7 +29,7 @@ from app.rag.core.database import (
     get_recent_logs,
 )
 from app.rag.core.storage import save_index, load_index
-from app.rag.core.embedder import get_embedder
+from app.rag.core.embedder import get_embedder, get_text_embedder
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +126,8 @@ app.add_middleware(
 llm = ChatOpenAI(model=LLMConfig.LLM_MODEL, temperature=LLMConfig.LLM_TEMPERATURE)
 
 # In-memory RAG state (standard / non-agentic path)
-vectorstore = None
+text_vectorstore = None        # sentence-transformers FAISS (384-dim)
+image_vectorstore = None       # CLIP FAISS (512-dim), may be None
 bm25_retriever = None
 image_data_store = {}
 current_doc_id = None          # SQLite document id for /query logs
@@ -142,19 +143,24 @@ current_agentic_doc_id = None  # SQLite document id for /query-agentic logs
 
 @app.on_event("startup")
 async def startup_event():
-    global vectorstore, bm25_retriever, image_data_store, current_doc_id
+    global text_vectorstore, image_vectorstore, bm25_retriever, image_data_store, current_doc_id
     global current_agentic_doc_id
 
     logger.info("Pre-loading CLIP model...")
     get_embedder()
     logger.info("CLIP model ready.")
 
+    logger.info("Pre-loading text embedding model...")
+    get_text_embedder()
+    logger.info("Text embedding model ready.")
+
     init_db()
 
     # Restore standard index
     loaded = load_index("standard")
     if loaded:
-        vectorstore      = loaded["faiss_store"]
+        text_vectorstore = loaded["text_faiss_store"]
+        image_vectorstore = loaded["image_faiss_store"]
         bm25_retriever   = loaded["bm25_retriever"]
         image_data_store = loaded["image_data_store"]
         logger.info("Restored standard index from disk.")
@@ -163,14 +169,15 @@ async def startup_event():
     agentic_loaded = load_index("agentic")
     if agentic_loaded:
         ras = agentic_rag_system
-        ras.vectorStore      = agentic_loaded["faiss_store"]
-        ras.bm25_retriever   = agentic_loaded["bm25_retriever"]
-        ras.image_data_store = agentic_loaded["image_data_store"]
-        ras.vision_llm       = llm
-        ras.all_docs         = list(ras.vectorStore.docstore._dict.values())
-        ras.text_docs        = [d for d in ras.all_docs if d.metadata.get("type") == "text"]
-        ras.all_embeddings   = []
-        ras._initialized     = True
+        ras.text_vectorStore  = agentic_loaded["text_faiss_store"]
+        ras.image_vectorStore = agentic_loaded["image_faiss_store"]
+        ras.bm25_retriever    = agentic_loaded["bm25_retriever"]
+        ras.image_data_store  = agentic_loaded["image_data_store"]
+        ras.vision_llm        = llm
+        ras.all_docs          = list(ras.text_vectorStore.docstore._dict.values())
+        ras.text_docs         = ras.all_docs  # text store only contains text docs
+        ras.all_embeddings    = []
+        ras._initialized      = True
         logger.info("Restored agentic index from disk.")
 
 
@@ -191,14 +198,14 @@ def ping():
 @limiter.limit("3/day")
 async def ingest_document(request: Request, file: UploadFile = File(...)):
     """Ingest a PDF into the standard (non-agentic) RAG system."""
-    global vectorstore, bm25_retriever, image_data_store, current_doc_id
+    global text_vectorstore, image_vectorstore, bm25_retriever, image_data_store, current_doc_id
 
     if not file.filename.endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
 
     temp_dir = Path(AppConfig.TEMP_DIR)
     temp_dir.mkdir(exist_ok=True)
-    temp_file = temp_dir / file.filename
+    temp_file = temp_dir / Path(file.filename).name
 
     try:
         size = 0
@@ -231,14 +238,15 @@ async def ingest_document(request: Request, file: UploadFile = File(...)):
             text_docs=text_docs,
         )
         hybrid_stores = vs.create_hybrid_retrievers()
-        vectorstore      = hybrid_stores["faiss_store"]
-        bm25_retriever   = hybrid_stores["bm25_retriever"]
-        image_data_store = hybrid_stores["image_data_store"]
+        text_vectorstore  = hybrid_stores["text_faiss_store"]
+        image_vectorstore = hybrid_stores["image_faiss_store"]
+        bm25_retriever    = hybrid_stores["bm25_retriever"]
+        image_data_store  = hybrid_stores["image_data_store"]
         logger.info("[ingest] Vector store created successfully")
 
         # Persist to disk
         logger.info("[ingest] Saving index to disk...")
-        save_index(vectorstore, image_data_store, "standard")
+        save_index(text_vectorstore, image_vectorstore, image_data_store, "standard")
         logger.info("[ingest] Saving document record to SQLite...")
         current_doc_id = save_document(
             "standard", file.filename, len(text_docs), len(image_data_store)
@@ -267,9 +275,9 @@ async def ingest_document(request: Request, file: UploadFile = File(...)):
 @limiter.limit("3/day")
 async def query_documents(request: Request, query: Query):
     """Query the standard RAG system."""
-    global vectorstore, bm25_retriever, image_data_store, current_doc_id
+    global text_vectorstore, image_vectorstore, bm25_retriever, image_data_store, current_doc_id
 
-    if not vectorstore:
+    if not text_vectorstore:
         raise HTTPException(
             status_code=400,
             detail="No documents have been ingested. Please ingest documents first.",
@@ -278,7 +286,8 @@ async def query_documents(request: Request, query: Query):
     try:
         rag = MultiModalRAG(
             query=query.question,
-            vectorStore=vectorstore,
+            text_vectorStore=text_vectorstore,
+            image_vectorStore=image_vectorstore,
             image_data_store=image_data_store,
             llm=llm,
             k=5,
@@ -322,7 +331,7 @@ async def ingest_document_agentic(request: Request, file: UploadFile = File(...)
 
     temp_dir = Path(AppConfig.TEMP_DIR)
     temp_dir.mkdir(exist_ok=True)
-    temp_file = temp_dir / file.filename
+    temp_file = temp_dir / Path(file.filename).name
 
     try:
         size = 0
@@ -345,7 +354,8 @@ async def ingest_document_agentic(request: Request, file: UploadFile = File(...)
         # Persist to disk
         logger.info("[ingest-agentic] Saving index to disk...")
         save_index(
-            agentic_rag_system.vectorStore,
+            agentic_rag_system.text_vectorStore,
+            agentic_rag_system.image_vectorStore,
             agentic_rag_system.image_data_store,
             "agentic",
         )
@@ -380,7 +390,8 @@ async def ingest_document_agentic(request: Request, file: UploadFile = File(...)
 
 
 @app.post("/query-agentic")
-async def query_documents_agentic(query: Query):
+@limiter.limit("3/day")
+async def query_documents_agentic(request: Request, query: Query):
     """Query the agentic RAG system."""
     if not agentic_rag_system.is_initialized():
         raise HTTPException(
@@ -446,10 +457,11 @@ async def query_documents_agentic_stream(request: Request, query: Query):
 
             top_similarity = 0.0
             try:
-                from app.rag.core.embedder import get_embedder
-                emb = get_embedder().embed_text(query.question).tolist()
-                scored = agentic_rag_system.vectorStore.similarity_search_with_score_by_vector(
-                    emb, k=1
+                text_emb = get_text_embedder().encode(
+                    query.question, normalize_embeddings=True
+                ).tolist()
+                scored = agentic_rag_system.text_vectorStore.similarity_search_with_score_by_vector(
+                    text_emb, k=1
                 )
                 if scored:
                     top_similarity = round(float(1 / (1 + scored[0][1])), 3)

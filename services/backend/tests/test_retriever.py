@@ -1,5 +1,5 @@
 """
-Tests for the retrieval logic - the most critical RAG component.
+Tests for the retrieval logic — the most critical RAG component.
 Tests both dense-only and hybrid retrieval paths.
 """
 import pytest
@@ -17,31 +17,30 @@ class MockDocument:
 
 
 class TestMultiModalRetrieval:
-    """Tests for the main MultiModalRetrieval class."""
+    """Tests for the MultiModalRetrieval wrapper class."""
 
     def test_dense_only_retrieval_when_bm25_is_none(
         self, mock_faiss_vectorstore, sample_image_data_store
     ):
-        """Test that retrieval works with FAISS only when BM25 is None."""
-        with patch('app.rag.core.retriever.get_embedder') as mock_get:
+        """Test that retrieval works with text FAISS only when BM25 is None."""
+        with patch('app.rag.core.retriever.get_text_embedder') as mock_get:
             mock_embedder = MagicMock()
-            mock_embedder.embed_text.return_value = np.random.randn(512).astype(np.float32)
+            mock_embedder.encode.return_value = np.random.randn(384).astype(np.float32)
             mock_get.return_value = mock_embedder
 
             from app.rag.core.retriever import MultiModalRetrieval
 
             retriever = MultiModalRetrieval(
                 query="test query",
-                vectorStore=mock_faiss_vectorstore,
+                text_vectorStore=mock_faiss_vectorstore,
                 image_data_store=sample_image_data_store,
                 k=3,
                 bm25_retriever=None,
-                use_hybrid=True
+                use_hybrid=True,
             )
 
             results = retriever.retrieve_multimodal()
 
-            # Should still return results from FAISS
             assert results is not None
             assert "docs" in results
             assert "top_similarity" in results
@@ -52,9 +51,9 @@ class TestMultiModalRetrieval:
         self, mock_faiss_vectorstore, sample_image_data_store
     ):
         """Test that retrieval respects the k parameter."""
-        with patch('app.rag.core.retriever.get_embedder') as mock_get:
+        with patch('app.rag.core.retriever.get_text_embedder') as mock_get:
             mock_embedder = MagicMock()
-            mock_embedder.embed_text.return_value = np.random.randn(512).astype(np.float32)
+            mock_embedder.encode.return_value = np.random.randn(384).astype(np.float32)
             mock_get.return_value = mock_embedder
 
             from app.rag.core.retriever import MultiModalRetrieval
@@ -64,105 +63,92 @@ class TestMultiModalRetrieval:
 
                 retriever = MultiModalRetrieval(
                     query="test query",
-                    vectorStore=mock_faiss_vectorstore,
+                    text_vectorStore=mock_faiss_vectorstore,
                     image_data_store=sample_image_data_store,
                     k=k,
                     bm25_retriever=None,
-                    use_hybrid=False
+                    use_hybrid=False,
                 )
 
-                results = retriever.retrieve_multimodal()
+                retriever.retrieve_multimodal()
 
-                # Verify k was passed to FAISS
                 call_kwargs = mock_faiss_vectorstore.similarity_search_with_score_by_vector.call_args[1]
                 assert call_kwargs['k'] == k
 
     def test_embedding_converted_to_list(
         self, mock_faiss_vectorstore, sample_image_data_store
     ):
-        """Test that numpy embedding is converted to list for FAISS compatibility."""
-        with patch('app.rag.core.retriever.get_embedder') as mock_get:
+        """Test that the numpy embedding is converted to list for FAISS compatibility."""
+        with patch('app.rag.core.retriever.get_text_embedder') as mock_get:
             mock_embedder = MagicMock()
-            np_embedding = np.random.randn(512).astype(np.float32)
-            mock_embedder.embed_text.return_value = np_embedding
+            np_embedding = np.random.randn(384).astype(np.float32)
+            mock_embedder.encode.return_value = np_embedding
             mock_get.return_value = mock_embedder
 
             from app.rag.core.retriever import MultiModalRetrieval
 
             retriever = MultiModalRetrieval(
                 query="test query",
-                vectorStore=mock_faiss_vectorstore,
+                text_vectorStore=mock_faiss_vectorstore,
                 image_data_store=sample_image_data_store,
                 k=5,
                 bm25_retriever=None,
-                use_hybrid=False
+                use_hybrid=False,
             )
 
             retriever.retrieve_multimodal()
 
-            # Verify embedding was converted to list
             call_kwargs = mock_faiss_vectorstore.similarity_search_with_score_by_vector.call_args[1]
             embedding_arg = call_kwargs['embedding']
             assert isinstance(embedding_arg, list)
-            assert len(embedding_arg) == 512
+            assert len(embedding_arg) == 384
 
 
 class TestHybridMultiModalRetrieval:
     """Tests for the hybrid (BM25 + Dense) retrieval class."""
 
-    def test_hybrid_retrieval_uses_ensemble(
+    def test_hybrid_retrieval_combines_bm25_and_dense(
         self, mock_faiss_vectorstore, mock_bm25_retriever, sample_image_data_store
     ):
-        """Test that hybrid retrieval uses EnsembleRetriever."""
-        with patch('app.rag.core.hybrid_retriever.get_embedder') as mock_get, \
-             patch('app.rag.core.hybrid_retriever.EnsembleRetriever') as MockEnsemble, \
+        """Test that hybrid retrieval invokes both BM25 and the text FAISS retriever."""
+        with patch('app.rag.core.hybrid_retriever.get_embedder'), \
              patch('app.rag.core.hybrid_retriever.HybridSearchConfig') as MockConfig:
-
-            mock_embedder = MagicMock()
-            mock_embedder.embed_text.return_value = np.random.randn(512).astype(np.float32)
-            mock_get.return_value = mock_embedder
 
             MockConfig.HYBRID_SEARCH_ENABLED = True
             MockConfig.BM25_WEIGHT = 0.4
             MockConfig.DENSE_WEIGHT = 0.6
             MockConfig.K_DENSE_CANDIDATES = 10
+            MockConfig.RRF_K_CONSTANT = 60
 
-            # Mock ensemble retriever
-            mock_ensemble = MagicMock()
-            mock_ensemble.invoke.return_value = [
-                MockDocument("result 1", {"page": 1}),
-                MockDocument("result 2", {"page": 2}),
+            mock_dense_retriever = MagicMock()
+            mock_dense_retriever.invoke.return_value = [
+                MockDocument("result 1", {"page": 1, "type": "text"}),
             ]
-            MockEnsemble.return_value = mock_ensemble
+            mock_faiss_vectorstore.as_retriever.return_value = mock_dense_retriever
 
             from app.rag.core.hybrid_retriever import HybridMultiModalRetrieval
 
             retriever = HybridMultiModalRetrieval(
                 query="hybrid test query",
-                faiss_store=mock_faiss_vectorstore,
+                text_faiss_store=mock_faiss_vectorstore,
                 bm25_retriever=mock_bm25_retriever,
                 image_data_store=sample_image_data_store,
                 k=5,
-                use_hybrid=True
+                use_hybrid=True,
             )
 
             results = retriever.retrieve_hybrid()
 
-            # Ensemble retriever should be created with correct weights
-            MockEnsemble.assert_called_once()
-            call_kwargs = MockEnsemble.call_args[1]
-            assert call_kwargs['weights'] == [0.4, 0.6]
+            mock_bm25_retriever.invoke.assert_called_once_with("hybrid test query")
+            mock_faiss_vectorstore.as_retriever.assert_called_once()
+            mock_dense_retriever.invoke.assert_called_once_with("hybrid test query")
 
     def test_hybrid_fallback_to_dense_when_bm25_none(
         self, mock_faiss_vectorstore, sample_image_data_store
     ):
         """Test that hybrid falls back to dense-only when BM25 is None."""
-        with patch('app.rag.core.hybrid_retriever.get_embedder') as mock_get, \
+        with patch('app.rag.core.hybrid_retriever.get_embedder'), \
              patch('app.rag.core.hybrid_retriever.HybridSearchConfig') as MockConfig:
-
-            mock_embedder = MagicMock()
-            mock_embedder.embed_text.return_value = np.random.randn(512).astype(np.float32)
-            mock_get.return_value = mock_embedder
 
             MockConfig.HYBRID_SEARCH_ENABLED = True
 
@@ -170,85 +156,77 @@ class TestHybridMultiModalRetrieval:
 
             retriever = HybridMultiModalRetrieval(
                 query="test query",
-                faiss_store=mock_faiss_vectorstore,
-                bm25_retriever=None,  # No BM25
+                text_faiss_store=mock_faiss_vectorstore,
+                bm25_retriever=None,
                 image_data_store=sample_image_data_store,
                 k=5,
-                use_hybrid=True
+                use_hybrid=True,
             )
 
             results = retriever.retrieve_hybrid()
 
-            # Should fall back to dense-only (FAISS)
-            mock_faiss_vectorstore.similarity_search_with_score_by_vector.assert_called_once()
+            # Should fall back to dense-only (similarity_search_with_score)
+            mock_faiss_vectorstore.similarity_search_with_score.assert_called_once()
 
     def test_retrieve_multimodal_respects_hybrid_config(
         self, mock_faiss_vectorstore, mock_bm25_retriever, sample_image_data_store
     ):
-        """Test that retrieve_multimodal respects HYBRID_SEARCH_ENABLED config."""
-        with patch('app.rag.core.hybrid_retriever.get_embedder') as mock_get, \
+        """Test that retrieve_multimodal respects HYBRID_SEARCH_ENABLED=False."""
+        with patch('app.rag.core.hybrid_retriever.get_embedder'), \
              patch('app.rag.core.hybrid_retriever.HybridSearchConfig') as MockConfig:
 
-            mock_embedder = MagicMock()
-            mock_embedder.embed_text.return_value = np.random.randn(512).astype(np.float32)
-            mock_get.return_value = mock_embedder
-
-            # Disable hybrid search
             MockConfig.HYBRID_SEARCH_ENABLED = False
 
             from app.rag.core.hybrid_retriever import HybridMultiModalRetrieval
 
             retriever = HybridMultiModalRetrieval(
                 query="test query",
-                faiss_store=mock_faiss_vectorstore,
+                text_faiss_store=mock_faiss_vectorstore,
                 bm25_retriever=mock_bm25_retriever,
                 image_data_store=sample_image_data_store,
                 k=5,
-                use_hybrid=True
+                use_hybrid=True,
             )
 
             results = retriever.retrieve_multimodal()
 
-            # Should use dense-only since hybrid is disabled
-            mock_faiss_vectorstore.similarity_search_with_score_by_vector.assert_called_once()
+            # Dense-only: similarity_search_with_score (not as_retriever)
+            mock_faiss_vectorstore.similarity_search_with_score.assert_called_once()
+            mock_bm25_retriever.invoke.assert_not_called()
 
     def test_hybrid_limits_results_to_k(
         self, mock_faiss_vectorstore, mock_bm25_retriever, sample_image_data_store
     ):
         """Test that hybrid retrieval limits results to k."""
-        with patch('app.rag.core.hybrid_retriever.get_embedder') as mock_get, \
-             patch('app.rag.core.hybrid_retriever.EnsembleRetriever') as MockEnsemble, \
+        with patch('app.rag.core.hybrid_retriever.get_embedder'), \
              patch('app.rag.core.hybrid_retriever.HybridSearchConfig') as MockConfig:
-
-            mock_embedder = MagicMock()
-            mock_embedder.embed_text.return_value = np.random.randn(512).astype(np.float32)
-            mock_get.return_value = mock_embedder
 
             MockConfig.HYBRID_SEARCH_ENABLED = True
             MockConfig.BM25_WEIGHT = 0.4
             MockConfig.DENSE_WEIGHT = 0.6
             MockConfig.K_DENSE_CANDIDATES = 10
+            MockConfig.RRF_K_CONSTANT = 60
 
-            # Return more results than k
-            mock_ensemble = MagicMock()
-            mock_ensemble.invoke.return_value = [
-                MockDocument(f"result {i}", {"page": i}) for i in range(10)
-            ]
-            MockEnsemble.return_value = mock_ensemble
+            # Both BM25 and dense return 10 results each
+            many_docs = [MockDocument(f"result {i}", {"page": i, "type": "text"}) for i in range(10)]
+            mock_bm25_retriever.invoke.return_value = many_docs
+
+            mock_dense_retriever = MagicMock()
+            mock_dense_retriever.invoke.return_value = many_docs
+            mock_faiss_vectorstore.as_retriever.return_value = mock_dense_retriever
 
             from app.rag.core.hybrid_retriever import HybridMultiModalRetrieval
 
             k = 3
             retriever = HybridMultiModalRetrieval(
                 query="test query",
-                faiss_store=mock_faiss_vectorstore,
+                text_faiss_store=mock_faiss_vectorstore,
                 bm25_retriever=mock_bm25_retriever,
                 image_data_store=sample_image_data_store,
                 k=k,
-                use_hybrid=True
+                use_hybrid=True,
             )
 
             results = retriever.retrieve_hybrid()
 
-            # Results should be limited to k
             assert len(results) == k

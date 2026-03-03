@@ -1,16 +1,24 @@
 """
-Singleton embedder module to prevent multiple CLIP model instantiations.
+Singleton embedder module providing two model-backed embedding singletons:
 
-This module provides a cached singleton instance of CLIPEmbedder to avoid
-loading the ~600MB model multiple times, significantly reducing memory usage
-and improving latency.
+- CLIPEmbedder  (get_embedder):      image embedding + CLIP text-for-image queries (512-dim)
+- TextEmbedder  (get_text_embedder): text chunk + text query embedding (384-dim)
+
+CLIP's text encoder has a hard 77-token limit that silently truncates chunks
+beyond ~300 characters. TextEmbedder uses BAAI/bge-small-en-v1.5 (512-token
+limit, 384-dim) which handles full document chunks without truncation and
+produces substantially better semantic similarity for text-to-text tasks.
+CLIP is kept only for image embedding and cross-modal image-retrieval queries
+(text → image FAISS index).
 """
 import logging
 from functools import lru_cache
 from dataclasses import dataclass, field
+import numpy as np
 import torch
 import transformers
 from transformers import CLIPProcessor, CLIPModel
+from sentence_transformers import SentenceTransformer
 from PIL import Image
 
 logger = logging.getLogger(__name__)
@@ -19,7 +27,12 @@ logger = logging.getLogger(__name__)
 @dataclass
 class CLIPEmbedder:
     """
-    Encapsulates CLIP model and provides embedding functionality for text and images.
+    Encapsulates CLIP model for IMAGE embedding and cross-modal image queries.
+
+    Do NOT use embed_text for indexing text chunks — the 77-token limit silently
+    truncates longer passages. Use TextEmbedder for text chunks instead.
+    embed_text is retained here solely to embed short query strings against
+    the image FAISS index (enabling text → image retrieval).
     """
     model_name: str = "openai/clip-vit-base-patch32"
     model: CLIPModel = field(init=False)
@@ -38,7 +51,7 @@ class CLIPEmbedder:
         self.model.eval()
         logger.info("CLIP model loaded successfully")
 
-    def embed_image(self, image_data):
+    def embed_image(self, image_data) -> np.ndarray:
         """
         Embed an image using the CLIP Model.
 
@@ -46,7 +59,7 @@ class CLIPEmbedder:
             image_data: Either a file path string or a PIL Image object
 
         Returns:
-            numpy.ndarray: Normalized image embedding vector
+            numpy.ndarray: Normalized 512-dim image embedding vector
         """
         if isinstance(image_data, str):
             image = Image.open(image_data).convert("RGB")
@@ -68,15 +81,15 @@ class CLIPEmbedder:
             features = torch.nn.functional.normalize(features, dim=-1)
             return features.squeeze().numpy()
 
-    def embed_text(self, text: str):
+    def embed_text(self, text: str) -> np.ndarray:
         """
-        Embed text using CLIP.
+        Embed a short text string using CLIP for querying the image FAISS index.
 
-        Args:
-            text: The text string to embed
+        CLIP text and image embeddings share the same 512-dim space, enabling
+        cross-modal retrieval (find images via text queries). Retained for use
+        by CLIPEmbeddingWrapper on the image index only.
 
-        Returns:
-            numpy.ndarray: Normalized text embedding vector
+        WARNING: truncates to 77 tokens. Do not use for document text chunks.
         """
         inputs = self.processor(
             text=text,
@@ -100,15 +113,46 @@ class CLIPEmbedder:
             return features.squeeze().numpy()
 
 
+class TextEmbedder:
+    """
+    Text embedding using BAAI/bge-small-en-v1.5 (384-dim, 512-token limit).
+
+    Used for:
+    - Embedding text chunks at ingestion time (no 77-token truncation)
+    - Embedding text queries against the text FAISS index
+    - Computing answer-source similarity in hallucination detection
+    """
+    MODEL_NAME = "BAAI/bge-small-en-v1.5"
+
+    def __init__(self):
+        logger.info(f"Loading text embedding model: {self.MODEL_NAME}")
+        self.model = SentenceTransformer(self.MODEL_NAME)
+        logger.info("Text embedding model loaded successfully")
+
+    def encode(self, text: str, normalize_embeddings: bool = True) -> np.ndarray:
+        """Embed a single text string. Returns a normalized 384-dim numpy array."""
+        return self.model.encode(text, normalize_embeddings=normalize_embeddings)
+
+    def encode_batch(self, texts: list, normalize_embeddings: bool = True) -> np.ndarray:
+        """Embed a list of texts. Returns a 2-D (N, 384) numpy array."""
+        return self.model.encode(texts, normalize_embeddings=normalize_embeddings)
+
+
 @lru_cache(maxsize=1)
 def get_embedder() -> CLIPEmbedder:
     """
-    Get the singleton CLIPEmbedder instance.
+    Get the singleton CLIPEmbedder instance (image embedding + image-index queries).
 
-    Uses lru_cache to ensure the model is only loaded once,
-    saving ~600MB memory per avoided instantiation.
-
-    Returns:
-        CLIPEmbedder: The singleton embedder instance
+    Uses lru_cache to ensure the ~600MB model is only loaded once.
     """
     return CLIPEmbedder()
+
+
+@lru_cache(maxsize=1)
+def get_text_embedder() -> TextEmbedder:
+    """
+    Get the singleton TextEmbedder instance (text chunk embedding + text-index queries).
+
+    Uses lru_cache to ensure the model is only loaded once.
+    """
+    return TextEmbedder()

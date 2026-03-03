@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import List, Dict
 
 
-# ========== Mock CLIP Embedder ==========
+# ========== Mock CLIP Embedder (image embedding, 512-dim) ==========
 
 class MockCLIPEmbedder:
     """Mock CLIP embedder that returns fixed 512-dim vectors without loading the model."""
@@ -23,7 +23,7 @@ class MockCLIPEmbedder:
         """Return a deterministic 512-dim normalized vector based on text hash."""
         np.random.seed(hash(text) % (2**32))
         vec = np.random.randn(512).astype(np.float32)
-        vec = vec / np.linalg.norm(vec)  # Normalize to unit length
+        vec = vec / np.linalg.norm(vec)
         return vec
 
     def embed_image(self, image_data) -> np.ndarray:
@@ -45,6 +45,43 @@ def mock_get_embedder(mock_embedder):
     """Fixture that patches get_embedder to return the mock."""
     with patch('app.rag.core.embedder.get_embedder', return_value=mock_embedder):
         yield mock_embedder
+
+
+# ========== Mock Text Embedder (sentence-transformers, 384-dim) ==========
+
+class MockTextEmbedder:
+    """Mock text embedder that returns fixed 384-dim vectors without loading the model."""
+
+    MODEL_NAME: str = "BAAI/bge-small-en-v1.5"
+
+    def encode(self, text: str, normalize_embeddings: bool = True) -> np.ndarray:
+        """Return a deterministic 384-dim normalized vector based on text hash."""
+        np.random.seed(hash(text) % (2**32))
+        vec = np.random.randn(384).astype(np.float32)
+        if normalize_embeddings:
+            vec = vec / np.linalg.norm(vec)
+        return vec
+
+    def encode_batch(self, texts: list, normalize_embeddings: bool = True) -> np.ndarray:
+        """Return a (N, 384) array of deterministic normalized vectors."""
+        vecs = np.stack([self.encode(t, normalize_embeddings=False) for t in texts])
+        if normalize_embeddings:
+            norms = np.linalg.norm(vecs, axis=1, keepdims=True)
+            vecs = vecs / np.maximum(norms, 1e-8)
+        return vecs
+
+
+@pytest.fixture
+def mock_text_embedder():
+    """Fixture providing a mock text embedder."""
+    return MockTextEmbedder()
+
+
+@pytest.fixture
+def mock_get_text_embedder(mock_text_embedder):
+    """Fixture that patches get_text_embedder to return the mock."""
+    with patch('app.rag.core.embedder.get_text_embedder', return_value=mock_text_embedder):
+        yield mock_text_embedder
 
 
 # ========== Sample Documents ==========
@@ -84,9 +121,10 @@ def sample_documents():
 
 
 @pytest.fixture
-def sample_embeddings(mock_embedder, sample_documents):
-    """Fixture providing pre-computed embeddings for sample documents."""
-    return [mock_embedder.embed_text(doc.page_content).tolist() for doc in sample_documents]
+def sample_embeddings(sample_documents):
+    """Fixture providing pre-computed 384-dim text embeddings for sample documents."""
+    embedder = MockTextEmbedder()
+    return [embedder.encode(doc.page_content).tolist() for doc in sample_documents]
 
 
 # ========== Sample PDF Bytes ==========
@@ -130,7 +168,7 @@ startxref
 
 @pytest.fixture
 def mock_faiss_vectorstore(sample_documents, sample_embeddings):
-    """Fixture providing a mock FAISS vector store."""
+    """Fixture providing a mock FAISS vector store (used as text store in tests)."""
     mock_store = MagicMock()
 
     def similarity_search_by_vector(embedding, k=5):
@@ -192,10 +230,14 @@ def app_client():
 
     # Reset global state before each test
     import app.api.app as app_module
-    app_module.vectorstore = None
+    app_module.text_vectorstore = None
+    app_module.image_vectorstore = None
     app_module.bm25_retriever = None
     app_module.image_data_store = {}
     app_module.agentic_rag_system.reset()
+
+    # Reset rate limiter storage so each test starts with a clean count
+    app_module.limiter._storage.reset()
 
     return TestClient(app)
 

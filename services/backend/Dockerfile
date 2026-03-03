@@ -2,7 +2,7 @@
 # Multi-stage build for optimized image size
 
 # Stage 1: Build stage
-FROM python:3.11-slim as builder
+FROM python:3.12-slim as builder
 
 # Set working directory
 WORKDIR /app
@@ -33,7 +33,7 @@ CLIPProcessor.from_pretrained('openai/clip-vit-base-patch32')"
 RUN python -c "import nltk; nltk.download('punkt'); nltk.download('stopwords')"
 
 # Stage 2: Runtime stage
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 # Set working directory
 WORKDIR /app

@@ -53,9 +53,10 @@ class TestIngestEndpoint:
             # Mock vector store
             mock_vs_instance = MagicMock()
             mock_vs_instance.create_hybrid_retrievers.return_value = {
-                "faiss_store": MagicMock(),
+                "text_faiss_store": MagicMock(),
+                "image_faiss_store": None,
                 "bm25_retriever": MagicMock(),
-                "image_data_store": {}
+                "image_data_store": {},
             }
             MockVS.return_value = mock_vs_instance
 
@@ -87,7 +88,7 @@ class TestQueryEndpoint:
         # Set up mock vectorstore
         import app.api.app as app_module
 
-        with patch.object(app_module, 'vectorstore', MagicMock()), \
+        with patch.object(app_module, 'text_vectorstore', MagicMock()), \
              patch.object(app_module, 'bm25_retriever', MagicMock()), \
              patch('app.api.app.MultiModalRAG') as MockRAG:
 
