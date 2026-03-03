@@ -1,8 +1,12 @@
+import asyncio
 import json
 import logging
 import re
 import time
+import uuid
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any, Optional
 
 from fastapi import FastAPI, Request, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -62,6 +66,7 @@ _INJECTION_PATTERNS = re.compile(
 
 class Query(BaseModel):
     question: str
+    session_id: str
 
     @field_validator("question")
     @classmethod
@@ -125,16 +130,39 @@ app.add_middleware(
 # Initialize OpenAI Chat model from config
 llm = ChatOpenAI(model=LLMConfig.LLM_MODEL, temperature=LLMConfig.LLM_TEMPERATURE)
 
-# In-memory RAG state (standard / non-agentic path)
-text_vectorstore = None        # sentence-transformers FAISS (384-dim)
-image_vectorstore = None       # CLIP FAISS (512-dim), may be None
-bm25_retriever = None
-image_data_store = {}
-current_doc_id = None          # SQLite document id for /query logs
+# ---------------------------------------------------------------------------
+# Session state
+# ---------------------------------------------------------------------------
 
-# Agentic RAG System (singleton)
-agentic_rag_system = MultiModalRAGSystem()
-current_agentic_doc_id = None  # SQLite document id for /query-agentic logs
+SESSION_TTL_SECONDS: int = 24 * 3600
+
+
+@dataclass
+class SessionState:
+    text_vectorstore: Any
+    image_vectorstore: Any
+    bm25_retriever: Any
+    image_data_store: dict
+    doc_id: Optional[int]
+    created_at: float = field(default_factory=time.time)
+
+
+sessions: dict[str, SessionState] = {}        # standard sessions
+agentic_sessions: dict[str, tuple] = {}       # (MultiModalRAGSystem, float)
+
+
+# ---------------------------------------------------------------------------
+# TTL eviction
+# ---------------------------------------------------------------------------
+
+async def _evict_expired_sessions():
+    while True:
+        await asyncio.sleep(30 * 60)
+        now = time.time()
+        for sid in [s for s, st in list(sessions.items()) if now - st.created_at > SESSION_TTL_SECONDS]:
+            del sessions[sid]
+        for sid in [s for s, (_, t) in list(agentic_sessions.items()) if now - t > SESSION_TTL_SECONDS]:
+            del agentic_sessions[sid]
 
 
 # ---------------------------------------------------------------------------
@@ -143,9 +171,6 @@ current_agentic_doc_id = None  # SQLite document id for /query-agentic logs
 
 @app.on_event("startup")
 async def startup_event():
-    global text_vectorstore, image_vectorstore, bm25_retriever, image_data_store, current_doc_id
-    global current_agentic_doc_id
-
     logger.info("Pre-loading CLIP model...")
     get_embedder()
     logger.info("CLIP model ready.")
@@ -156,29 +181,49 @@ async def startup_event():
 
     init_db()
 
-    # Restore standard index
-    loaded = load_index("standard")
-    if loaded:
-        text_vectorstore = loaded["text_faiss_store"]
-        image_vectorstore = loaded["image_faiss_store"]
-        bm25_retriever   = loaded["bm25_retriever"]
-        image_data_store = loaded["image_data_store"]
-        logger.info("Restored standard index from disk.")
+    # Restore standard sessions from data/standard/*/
+    standard_root = Path(AppConfig.DATA_DIR) / "standard"
+    if standard_root.exists():
+        for session_dir in standard_root.iterdir():
+            if not session_dir.is_dir():
+                continue
+            loaded = load_index("standard", session_id=session_dir.name)
+            if loaded:
+                sessions[session_dir.name] = SessionState(
+                    text_vectorstore=loaded["text_faiss_store"],
+                    image_vectorstore=loaded["image_faiss_store"],
+                    bm25_retriever=loaded["bm25_retriever"],
+                    image_data_store=loaded["image_data_store"],
+                    doc_id=None,
+                )
+                logger.info(f"Restored standard session {session_dir.name} from disk.")
 
-    # Restore agentic index into the singleton
-    agentic_loaded = load_index("agentic")
-    if agentic_loaded:
-        ras = agentic_rag_system
-        ras.text_vectorStore  = agentic_loaded["text_faiss_store"]
-        ras.image_vectorStore = agentic_loaded["image_faiss_store"]
-        ras.bm25_retriever    = agentic_loaded["bm25_retriever"]
-        ras.image_data_store  = agentic_loaded["image_data_store"]
-        ras.vision_llm        = llm
-        ras.all_docs          = list(ras.text_vectorStore.docstore._dict.values())
-        ras.text_docs         = ras.all_docs  # text store only contains text docs
-        ras.all_embeddings    = []
-        ras._initialized      = True
-        logger.info("Restored agentic index from disk.")
+    # Restore agentic sessions from data/agentic/*/
+    agentic_root = Path(AppConfig.DATA_DIR) / "agentic"
+    if agentic_root.exists():
+        for session_dir in agentic_root.iterdir():
+            if not session_dir.is_dir():
+                continue
+            agentic_loaded = load_index("agentic", session_id=session_dir.name)
+            if agentic_loaded:
+                ras = MultiModalRAGSystem()
+                ras.text_vectorStore = agentic_loaded["text_faiss_store"]
+                ras.image_vectorStore = agentic_loaded["image_faiss_store"]
+                ras.bm25_retriever = agentic_loaded["bm25_retriever"]
+                ras.image_data_store = agentic_loaded["image_data_store"]
+                ras.vision_llm = llm
+                ras.all_docs = list(ras.text_vectorStore.docstore._dict.values())
+                ras.text_docs = ras.all_docs
+                ras.all_embeddings = []
+                ras._initialized = True
+                agentic_sessions[session_dir.name] = (ras, time.time())
+                logger.info(f"Restored agentic session {session_dir.name} from disk.")
+
+    # Start TTL eviction
+    try:
+        asyncio.create_task(_evict_expired_sessions())
+    except RuntimeError:
+        pass  # no event loop in test mode
 
 
 # ---------------------------------------------------------------------------
@@ -195,11 +240,9 @@ def ping():
 # ---------------------------------------------------------------------------
 
 @app.post("/ingest")
-@limiter.limit("3/day")
+# @limiter.limit("3/day")
 async def ingest_document(request: Request, file: UploadFile = File(...)):
     """Ingest a PDF into the standard (non-agentic) RAG system."""
-    global text_vectorstore, image_vectorstore, bm25_retriever, image_data_store, current_doc_id
-
     if not file.filename.endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
 
@@ -244,17 +287,26 @@ async def ingest_document(request: Request, file: UploadFile = File(...)):
         image_data_store  = hybrid_stores["image_data_store"]
         logger.info("[ingest] Vector store created successfully")
 
-        # Persist to disk
+        # Generate session and persist to disk
+        session_id = str(uuid.uuid4())
         logger.info("[ingest] Saving index to disk...")
-        save_index(text_vectorstore, image_vectorstore, image_data_store, "standard")
+        save_index(text_vectorstore, image_vectorstore, image_data_store, "standard", session_id=session_id)
         logger.info("[ingest] Saving document record to SQLite...")
-        current_doc_id = save_document(
+        doc_id = save_document(
             "standard", file.filename, len(text_docs), len(image_data_store)
         )
-        logger.info(f"[ingest] Document saved with id={current_doc_id}")
+        logger.info(f"[ingest] Document saved with id={doc_id}")
+
+        sessions[session_id] = SessionState(
+            text_vectorstore=text_vectorstore,
+            image_vectorstore=image_vectorstore,
+            bm25_retriever=bm25_retriever,
+            image_data_store=image_data_store,
+            doc_id=doc_id,
+        )
 
         return JSONResponse(
-            content={"message": f"Successfully processed {file.filename}"},
+            content={"session_id": session_id, "message": f"Successfully processed {file.filename}"},
             status_code=200,
         )
 
@@ -272,31 +324,30 @@ async def ingest_document(request: Request, file: UploadFile = File(...)):
 
 
 @app.post("/query")
-@limiter.limit("3/day")
+# @limiter.limit("3/day")
 async def query_documents(request: Request, query: Query):
     """Query the standard RAG system."""
-    global text_vectorstore, image_vectorstore, bm25_retriever, image_data_store, current_doc_id
-
-    if not text_vectorstore:
+    state = sessions.get(query.session_id)
+    if state is None:
         raise HTTPException(
-            status_code=400,
-            detail="No documents have been ingested. Please ingest documents first.",
+            status_code=404,
+            detail="Session not found. Please ingest a document first.",
         )
 
     try:
         rag = MultiModalRAG(
             query=query.question,
-            text_vectorStore=text_vectorstore,
-            image_vectorStore=image_vectorstore,
-            image_data_store=image_data_store,
+            text_vectorStore=state.text_vectorstore,
+            image_vectorStore=state.image_vectorstore,
+            image_data_store=state.image_data_store,
             llm=llm,
             k=5,
-            bm25_retriever=bm25_retriever,
+            bm25_retriever=state.bm25_retriever,
         )
         t0 = time.perf_counter()
         result = rag.generate()
         latency_ms = (time.perf_counter() - t0) * 1000
-        _log_query(query.question, result, latency_ms, document_id=current_doc_id)
+        _log_query(query.question, result, latency_ms, document_id=state.doc_id)
 
         return JSONResponse(
             content={
@@ -321,11 +372,9 @@ async def query_documents(request: Request, query: Query):
 # ---------------------------------------------------------------------------
 
 @app.post("/ingest-agentic")
-@limiter.limit("3/day")
+# @limiter.limit("3/day")
 async def ingest_document_agentic(request: Request, file: UploadFile = File(...)):
     """Ingest a PDF into the agentic RAG system."""
-    global current_agentic_doc_id
-
     if not file.filename.endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
 
@@ -348,28 +397,32 @@ async def ingest_document_agentic(request: Request, file: UploadFile = File(...)
         logger.info(f"[ingest-agentic] Saved upload to {temp_file} ({temp_file.stat().st_size} bytes)")
 
         logger.info("[ingest-agentic] Initializing agentic RAG system...")
-        agentic_rag_system.initialize(pdf_path=str(temp_file), vision_llm=llm)
+        ras = MultiModalRAGSystem()
+        ras.initialize(pdf_path=str(temp_file), vision_llm=llm)
         logger.info("[ingest-agentic] Agentic RAG initialized successfully")
 
-        # Persist to disk
+        # Generate session and persist to disk
+        session_id = str(uuid.uuid4())
         logger.info("[ingest-agentic] Saving index to disk...")
         save_index(
-            agentic_rag_system.text_vectorStore,
-            agentic_rag_system.image_vectorStore,
-            agentic_rag_system.image_data_store,
+            ras.text_vectorStore,
+            ras.image_vectorStore,
+            ras.image_data_store,
             "agentic",
+            session_id=session_id,
         )
         logger.info("[ingest-agentic] Saving document record to SQLite...")
-        current_agentic_doc_id = save_document(
+        save_document(
             "agentic",
             file.filename,
-            len(agentic_rag_system.text_docs),
-            len(agentic_rag_system.image_data_store),
+            len(ras.text_docs),
+            len(ras.image_data_store),
         )
-        logger.info(f"[ingest-agentic] Document saved with id={current_agentic_doc_id}")
+        agentic_sessions[session_id] = (ras, time.time())
 
         return JSONResponse(
             content={
+                "session_id": session_id,
                 "message": f"Successfully processed {file.filename} for Agentic RAG",
                 "status": "initialized",
             },
@@ -390,24 +443,26 @@ async def ingest_document_agentic(request: Request, file: UploadFile = File(...)
 
 
 @app.post("/query-agentic")
-@limiter.limit("3/day")
+# @limiter.limit("3/day")
 async def query_documents_agentic(request: Request, query: Query):
     """Query the agentic RAG system."""
-    if not agentic_rag_system.is_initialized():
+    entry = agentic_sessions.get(query.session_id)
+    if entry is None:
         raise HTTPException(
-            status_code=400,
-            detail="Agentic RAG system not initialized. Please ingest a document first using /ingest-agentic.",
+            status_code=404,
+            detail="Session not found. Please ingest a document first using /ingest-agentic.",
         )
+    ras, _ = entry
 
     try:
         t0 = time.perf_counter()
         result = run_agentic_rag(
             question=query.question,
             llm=llm,
-            rag_system=agentic_rag_system,
+            rag_system=ras,
         )
         latency_ms = (time.perf_counter() - t0) * 1000
-        _log_query(query.question, result, latency_ms, document_id=current_agentic_doc_id)
+        _log_query(query.question, result, latency_ms, document_id=None)
 
         return JSONResponse(
             content={
@@ -425,14 +480,16 @@ async def query_documents_agentic(request: Request, query: Query):
 
 
 @app.post("/query-agentic-stream")
-@limiter.limit("3/day")
+# @limiter.limit("3/day")
 async def query_documents_agentic_stream(request: Request, query: Query):
     """Streaming endpoint for the agentic RAG system."""
-    if not agentic_rag_system.is_initialized():
+    entry = agentic_sessions.get(query.session_id)
+    if entry is None:
         raise HTTPException(
-            status_code=400,
-            detail="Agentic RAG system not initialized. Please ingest a document first using /ingest-agentic.",
+            status_code=404,
+            detail="Session not found. Please ingest a document first using /ingest-agentic.",
         )
+    ras, _ = entry
 
     t0 = time.perf_counter()
     result_collector: dict = {}
@@ -443,7 +500,7 @@ async def query_documents_agentic_stream(request: Request, query: Query):
             async for token in stream_agentic_rag(
                 question=query.question,
                 llm=llm,
-                rag_system=agentic_rag_system,
+                rag_system=ras,
                 result_collector=result_collector,
             ):
                 yield token
@@ -460,7 +517,7 @@ async def query_documents_agentic_stream(request: Request, query: Query):
                 text_emb = get_text_embedder().encode(
                     query.question, normalize_embeddings=True
                 ).tolist()
-                scored = agentic_rag_system.text_vectorStore.similarity_search_with_score_by_vector(
+                scored = ras.text_vectorStore.similarity_search_with_score_by_vector(
                     text_emb, k=1
                 )
                 if scored:
@@ -473,8 +530,8 @@ async def query_documents_agentic_stream(request: Request, query: Query):
 
             source_pages = {s["page"] for s in sources}
             relevant_docs = (
-                [d for d in agentic_rag_system.text_docs if d.metadata.get("page") in source_pages]
-                or agentic_rag_system.text_docs[:10]
+                [d for d in ras.text_docs if d.metadata.get("page") in source_pages]
+                or ras.text_docs[:10]
             )
             answer_source_sim = compute_answer_source_similarity(answer, relevant_docs)
             confidence        = compute_confidence(top_similarity, num_chunks)
@@ -504,7 +561,7 @@ async def query_documents_agentic_stream(request: Request, query: Query):
                     _log_query(
                         query.question, full_result,
                         full_result.get("latency_ms", (time.perf_counter() - t0) * 1000),
-                        document_id=current_agentic_doc_id,
+                        document_id=None,
                     )
                 except Exception as e:
                     logger.warning(f"Failed to log streaming query: {e}")

@@ -23,6 +23,7 @@ export interface QueryResponse {
 
 // Response from /ingest-agentic endpoint
 export interface IngestResponse {
+  session_id: string;
   message: string;
   status: 'initialized' | 'error';
 }
@@ -30,6 +31,7 @@ export interface IngestResponse {
 // Request payload for query endpoints
 export interface QueryRequest {
   question: string;
+  session_id: string;
 }
 
 // Generic error response from API

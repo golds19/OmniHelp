@@ -18,16 +18,20 @@ logger = logging.getLogger(__name__)
 
 class MultiModalRAGSystem:
     """
-    Singleton class to manage the multimodal RAG system state.
-    Prevents reloading models and embeddings on every query.
+    Per-session manager for the multimodal RAG system state.
+    Each instance is independent, enabling per-session isolation.
     """
-    _instance = None
-    _initialized = False
 
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super(MultiModalRAGSystem, cls).__new__(cls)
-        return cls._instance
+    def __init__(self):
+        self._initialized: bool = False
+        self.text_vectorStore = None
+        self.image_vectorStore = None
+        self.bm25_retriever = None
+        self.all_docs = []
+        self.all_embeddings = []
+        self.text_docs = []
+        self.image_data_store = {}
+        self.vision_llm = None
 
     def initialize(self, pdf_path: str, vision_llm: Optional[ChatOpenAI] = None):
         """

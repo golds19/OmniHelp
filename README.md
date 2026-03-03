@@ -5,6 +5,10 @@ A multimodal RAG system. Upload a PDF — ask questions about it. Extracts text 
 **Live:** [omni-help.vercel.app](https://omni-help.vercel.app)
 ---
 
+**Architecture**
+
+<img src="images/lifeforge-architecture.png" width="30%" />
+
 ## Stack
 
 **Backend** — FastAPI · LangChain / LangGraph · FAISS · CLIP (openai/clip-vit-base-patch32) · BM25 · PyMuPDF · Python 3.11

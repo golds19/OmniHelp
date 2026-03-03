@@ -5,6 +5,7 @@ export const useDocumentIngest = () => {
   const [ingested, setIngested] = useState(false);
   const [ingestStatus, setIngestStatus] = useState('');
   const [isPending, setIsPending] = useState(false);
+  const [sessionId, setSessionId] = useState<string | null>(null);
 
   const ingestDocument = useCallback(async (file: File | null) => {
     if (!file) {
@@ -32,6 +33,7 @@ export const useDocumentIngest = () => {
 
       if (res.ok) {
         setIngested(true);
+        setSessionId(data.session_id ?? null);
         setIngestStatus(MESSAGES.INGEST_SUCCESS);
       } else {
         setIngestStatus(data.detail || 'Ingestion failed.');
@@ -46,12 +48,14 @@ export const useDocumentIngest = () => {
   const resetIngestStatus = useCallback(() => {
     setIngested(false);
     setIngestStatus('');
+    setSessionId(null);
   }, []);
 
   return {
     ingested,
     ingestStatus,
     isPending,
+    sessionId,
     ingestDocument,
     resetIngestStatus,
   };

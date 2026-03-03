@@ -36,7 +36,7 @@ export default function TestPost() {
       .catch(() => setBackendStatus('offline'));
   }, []);
 
-  const { ingested, ingestStatus, isPending, ingestDocument, resetIngestStatus } = useDocumentIngest();
+  const { ingested, ingestStatus, isPending, sessionId, ingestDocument, resetIngestStatus } = useDocumentIngest();
   const { response, isStreaming, queryLog, queryDocument, stopQuery, clearResponse } = useDocumentQuery();
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -54,7 +54,8 @@ export default function TestPost() {
 
   const handleQuery = async (e: React.FormEvent) => {
     e.preventDefault();
-    await queryDocument(input);
+    if (!sessionId) return;
+    await queryDocument(input, sessionId);
   };
 
   if (backendStatus === 'connecting') {

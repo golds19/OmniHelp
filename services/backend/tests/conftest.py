@@ -228,13 +228,10 @@ def app_client():
     from fastapi.testclient import TestClient
     from app.api.app import app
 
-    # Reset global state before each test
+    # Reset session state before each test
     import app.api.app as app_module
-    app_module.text_vectorstore = None
-    app_module.image_vectorstore = None
-    app_module.bm25_retriever = None
-    app_module.image_data_store = {}
-    app_module.agentic_rag_system.reset()
+    app_module.sessions = {}
+    app_module.agentic_sessions = {}
 
     # Reset rate limiter storage so each test starts with a clean count
     app_module.limiter._storage.reset()

@@ -40,7 +40,7 @@ export const useDocumentQuery = () => {
     rafIdRef.current = null;
   }, []);
 
-  const queryDocument = async (question: string) => {
+  const queryDocument = async (question: string, sessionId: string) => {
     setResponse('');
     setQueryLog(null);
     setIsStreaming(true);
@@ -53,7 +53,7 @@ export const useDocumentQuery = () => {
       const res = await fetch(API_ENDPOINTS.QUERY_STREAM, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question }),
+        body: JSON.stringify({ question, session_id: sessionId }),
         signal: abortControllerRef.current.signal,
       });
 

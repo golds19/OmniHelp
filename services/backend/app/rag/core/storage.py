@@ -27,9 +27,12 @@ from .vectorstore import CLIPEmbeddingWrapper, SentenceTransformerEmbeddingWrapp
 logger = logging.getLogger(__name__)
 
 
-def _index_folder(index_type: str) -> Path:
-    """Return the base directory for a given index type ('standard' or 'agentic')."""
-    return Path(AppConfig.DATA_DIR) / index_type
+def _resolve_base(index_type: str, session_id: Optional[str] = None) -> Path:
+    """Return the base directory for a given index type and optional session."""
+    base = Path(AppConfig.DATA_DIR) / index_type
+    if session_id:
+        base = base / session_id
+    return base
 
 
 def save_index(
@@ -37,6 +40,7 @@ def save_index(
     image_faiss_store: Optional[FAISS],
     image_data_store: dict,
     index_type: str,
+    session_id: Optional[str] = None,
 ):
     """
     Persist text and image FAISS indexes plus the image data store to disk.
@@ -46,8 +50,9 @@ def save_index(
         image_faiss_store: CLIP FAISS (512-dim); may be None (no images in doc).
         image_data_store:  base64 image dict.
         index_type:        'standard' or 'agentic'.
+        session_id:        optional UUID; omit for flat legacy layout.
     """
-    base = _index_folder(index_type)
+    base = _resolve_base(index_type, session_id)
     base.mkdir(parents=True, exist_ok=True)
 
     if text_faiss_store is not None:
@@ -66,15 +71,19 @@ def save_index(
     logger.info(f"Saved {index_type} index to {base}")
 
 
-def load_index(index_type: str) -> Optional[dict]:
+def load_index(index_type: str, session_id: Optional[str] = None) -> Optional[dict]:
     """
     Load previously saved FAISS indexes, image store, and rebuild BM25.
 
     Returns a dict with keys:
         text_faiss_store, image_faiss_store, bm25_retriever, image_data_store
     or None if no saved index exists.
+
+    Args:
+        index_type:  'standard' or 'agentic'.
+        session_id:  optional UUID; omit for flat legacy layout.
     """
-    base = _index_folder(index_type)
+    base = _resolve_base(index_type, session_id)
     text_folder = base / "text"
 
     if not (text_folder / "index.faiss").exists():
