@@ -1,7 +1,7 @@
-import { Button } from './Button';
-import { UploadIcon } from './Icons';
+import { useRef } from 'react';
+import { UploadIcon, SpinnerIcon, CheckCircleIcon, ErrorCircleIcon } from './Icons';
 
-interface FileUploadSectionProps {
+interface Props {
   file: File | null;
   isPending: boolean;
   ingested: boolean;
@@ -10,67 +10,98 @@ interface FileUploadSectionProps {
   onIngest: (e: React.FormEvent) => void;
 }
 
-export const FileUploadSection = ({
-  file,
-  isPending,
-  ingested,
-  ingestStatus,
-  onFileChange,
-  onIngest,
-}: FileUploadSectionProps) => {
+const fmt = (bytes: number) => bytes < 1048576
+  ? `${(bytes / 1024).toFixed(1)} KB`
+  : `${(bytes / 1048576).toFixed(1)} MB`;
+
+export const FileUploadSection = ({ file, isPending, ingested, ingestStatus, onFileChange, onIngest }: Props) => {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  if (ingested) {
+    return (
+      <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-surface border border-border">
+        <CheckCircleIcon className="h-4 w-4 text-emerald-500 shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-mono text-foreground truncate">{file?.name ?? 'Document loaded'}</p>
+          {file && <p className="text-[11px] text-foreground-dim">{fmt(file.size)}</p>}
+        </div>
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          className="text-[11px] text-foreground-dim hover:text-foreground transition-colors shrink-0"
+        >
+          Change
+        </button>
+        <input ref={inputRef} type="file" accept=".pdf" onChange={onFileChange} className="sr-only" />
+      </div>
+    );
+  }
+
+  const statusType = ingestStatus && !isPending ? 'error' : null;
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-2">
-        <span className={`h-5 w-5 rounded-full text-xs font-bold flex items-center justify-center flex-shrink-0 ${
-          ingested
-            ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400'
-            : 'bg-accent-muted text-accent'
-        }`}>
-          1
-        </span>
-        <p className="text-xs font-medium text-foreground-dim uppercase tracking-wider">Document</p>
+    <section className="space-y-3">
+      <div className="flex items-center gap-3">
+        <span className="font-mono text-[10px] text-accent tracking-widest">01</span>
+        <p className="text-xs font-medium uppercase tracking-widest text-foreground-dim">Upload document</p>
       </div>
 
-      <form onSubmit={onIngest} className="space-y-4">
-        <label className="block cursor-pointer">
-          <div className={`border-2 border-dashed rounded-xl p-8 text-center transition-all ${
-            ingested
-              ? 'border-emerald-200 bg-emerald-50/40 dark:border-emerald-500/30 dark:bg-emerald-500/5'
-              : 'border-border bg-surface hover:border-accent/50 dark:hover:border-accent/40'
-          }`}>
-            <UploadIcon className="mx-auto h-10 w-10 text-foreground-dim mb-3" />
+      <form onSubmit={onIngest} className="space-y-3">
+        <div
+          onClick={() => !isPending && inputRef.current?.click()}
+          className={`rounded-xl border-2 border-dashed cursor-pointer transition-all duration-200 group ${
+            file
+              ? 'border-accent/40 bg-accent-muted'
+              : 'border-border hover:border-accent/40 hover:bg-accent-muted/30'
+          }`}
+        >
+          <input ref={inputRef} type="file" accept=".pdf" onChange={onFileChange}
+            disabled={isPending} className="sr-only" />
+
+          <div className="px-6 py-8 flex flex-col items-center gap-3 text-center">
+            <div className={`h-10 w-10 rounded-xl flex items-center justify-center transition-colors ${
+              file
+                ? 'bg-accent/15 text-accent'
+                : 'bg-surface-elevated text-foreground-dim group-hover:bg-accent/10 group-hover:text-accent'
+            }`}>
+              <UploadIcon className="h-5 w-5" />
+            </div>
             {file ? (
-              <div className="space-y-1">
-                <span className="inline-block bg-accent-muted text-accent text-sm px-3 py-1 rounded-full font-medium">
-                  {file.name}
-                </span>
-                <p className="text-xs text-foreground-dim">{(file.size / 1024).toFixed(0)} KB</p>
+              <div>
+                <p className="text-sm font-mono text-foreground">{file.name}</p>
+                <p className="text-[11px] text-foreground-dim mt-0.5">{fmt(file.size)}</p>
               </div>
             ) : (
-              <p className="text-foreground-muted text-sm">Drop a PDF or click to browse</p>
+              <div>
+                <p className="text-sm text-foreground">Drop a PDF here</p>
+                <p className="text-[11px] text-foreground-dim mt-0.5">or click to browse · max 10 MB</p>
+              </div>
             )}
           </div>
-          <input type="file" accept="application/pdf" onChange={onFileChange} className="hidden" />
-        </label>
-
-        <div className="flex items-center gap-4">
-          <Button
-            type="submit"
-            variant="primary"
-            isLoading={isPending}
-            loadingText="Processing..."
-            disabled={!file}
-          >
-            Ingest document
-          </Button>
-
-          {ingestStatus && (
-            <p className={`text-sm ${ingested ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
-              {ingestStatus}
-            </p>
-          )}
         </div>
+
+        {file && (
+          <button type="submit" disabled={isPending}
+            className="w-full h-9 rounded-lg bg-accent text-white text-sm font-medium transition-all hover:bg-accent/90 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+            {isPending
+              ? <><SpinnerIcon className="h-4 w-4 animate-spin" /> Processing…</>
+              : 'Ingest document'}
+          </button>
+        )}
+
+        {ingestStatus && (
+          <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs ${
+            statusType === 'error'
+              ? 'bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-400'
+              : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400'
+          }`}>
+            {statusType === 'error'
+              ? <ErrorCircleIcon className="h-3.5 w-3.5 shrink-0" />
+              : <CheckCircleIcon className="h-3.5 w-3.5 shrink-0" />}
+            {ingestStatus}
+          </div>
+        )}
       </form>
-    </div>
+    </section>
   );
 };

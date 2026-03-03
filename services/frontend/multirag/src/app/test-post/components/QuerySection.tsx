@@ -1,6 +1,4 @@
-import { Button } from './Button';
-
-interface QuerySectionProps {
+interface Props {
   input: string;
   isPending: boolean;
   ingested: boolean;
@@ -10,51 +8,50 @@ interface QuerySectionProps {
   onStop: () => void;
 }
 
-export const QuerySection = ({
-  input,
-  isPending,
-  ingested,
-  isStreaming,
-  onInputChange,
-  onQuery,
-  onStop,
-}: QuerySectionProps) => {
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-2">
-        <span className="h-5 w-5 rounded-full bg-accent-muted text-accent text-xs font-bold flex items-center justify-center flex-shrink-0">
-          2
-        </span>
-        <p className="text-xs font-medium text-foreground-dim uppercase tracking-wider">Question</p>
-      </div>
+export const QuerySection = ({ input, isPending, ingested, isStreaming, onInputChange, onQuery, onStop }: Props) => {
+  const canQuery = ingested && !isPending;
 
-      <form onSubmit={onQuery} className="space-y-3">
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey && canQuery && !isStreaming && input.trim()) {
+      e.preventDefault();
+      onQuery(e as unknown as React.FormEvent);
+    }
+  };
+
+  return (
+    <form onSubmit={onQuery}>
+      <div className={`relative rounded-xl border bg-surface transition-all duration-200 ${
+        canQuery
+          ? 'border-border hover:border-border-hover focus-within:border-accent/50 focus-within:ring-2 focus-within:ring-accent/10'
+          : 'border-border opacity-50'
+      }`}>
         <textarea
           value={input}
-          onChange={(e) => onInputChange(e.target.value)}
-          placeholder={ingested ? 'What would you like to know?' : 'Upload a document first...'}
-          rows={4}
-          className="border border-border rounded-xl px-4 py-3 w-full bg-surface text-foreground placeholder:text-foreground-dim focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent/50 disabled:opacity-40 disabled:cursor-not-allowed resize-none transition-colors"
-          disabled={!ingested}
+          onChange={e => onInputChange(e.target.value)}
+          onKeyDown={handleKeyDown}
+          disabled={!canQuery}
+          placeholder={ingested ? 'Ask anything about your document… (⏎ to send)' : 'Upload a document first'}
+          rows={1}
+          style={{ maxHeight: '120px' }}
+          className="w-full px-4 pt-3.5 pb-11 text-sm text-foreground placeholder:text-foreground-dim bg-transparent resize-none outline-none leading-6 overflow-y-auto"
         />
-        <div className="flex justify-end">
+        <div className="absolute bottom-3 right-3 flex items-center gap-2">
+          {input.trim() && (
+            <span className="text-[10px] font-mono text-foreground-dim">{input.length}/2000</span>
+          )}
           {isStreaming ? (
-            <Button type="button" variant="danger" onClick={onStop}>
+            <button type="button" onClick={onStop}
+              className="h-7 px-3 rounded-lg bg-surface-elevated border border-border text-xs text-foreground-dim hover:text-foreground transition-colors">
               Stop
-            </Button>
+            </button>
           ) : (
-            <Button
-              type="submit"
-              variant="primary"
-              isLoading={isPending}
-              loadingText="Thinking..."
-              disabled={!ingested || !input}
-            >
+            <button type="submit" disabled={!canQuery || !input.trim()}
+              className="h-7 px-3 rounded-lg bg-accent text-white text-xs font-medium transition-all hover:bg-accent/90 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed">
               Ask
-            </Button>
+            </button>
           )}
         </div>
-      </form>
-    </div>
+      </div>
+    </form>
   );
 };

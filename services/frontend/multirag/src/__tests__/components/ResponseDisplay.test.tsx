@@ -41,7 +41,7 @@ describe('ResponseDisplay', () => {
     it('should render when ingested is true even without response', () => {
       render(<ResponseDisplay {...defaultProps} ingested={true} />);
 
-      expect(screen.getByText('Answer')).toBeInTheDocument();
+      expect(screen.getByText('Thinking…')).toBeInTheDocument();
     });
 
     it('should render when response is present', () => {
@@ -77,7 +77,7 @@ describe('ResponseDisplay', () => {
         />
       );
 
-      expect(screen.getByText('Your answer will appear here...')).toBeInTheDocument();
+      expect(screen.getByText('Thinking…')).toBeInTheDocument();
     });
   });
 
@@ -135,7 +135,7 @@ describe('ResponseDisplay', () => {
         />
       );
 
-      expect(screen.queryByText('82% confidence')).not.toBeInTheDocument();
+      expect(screen.queryByText(/82%/)).not.toBeInTheDocument();
     });
 
     it('should render confidence badge when queryLog is provided', () => {
@@ -149,7 +149,7 @@ describe('ResponseDisplay', () => {
         />
       );
 
-      expect(screen.getByText('82% confidence')).toBeInTheDocument();
+      expect(screen.getByText(/82%/)).toBeInTheDocument();
     });
 
     it('should render source page chips', () => {
@@ -164,9 +164,9 @@ describe('ResponseDisplay', () => {
       );
 
       const pagesContainer = screen.getByTestId('source-pages');
-      expect(within(pagesContainer).getByText('3')).toBeInTheDocument();
-      expect(within(pagesContainer).getByText('7')).toBeInTheDocument();
-      expect(within(pagesContainer).getByText('12')).toBeInTheDocument();
+      expect(within(pagesContainer).getByText('p.3')).toBeInTheDocument();
+      expect(within(pagesContainer).getByText('p.7')).toBeInTheDocument();
+      expect(within(pagesContainer).getByText('p.12')).toBeInTheDocument();
     });
 
     it('should render latency rounded to 1 decimal', () => {
@@ -243,7 +243,7 @@ describe('ResponseDisplay', () => {
         />
       );
 
-      expect(screen.getByText('85% confidence')).toBeInTheDocument();
+      expect(screen.getByText(/85%/)).toBeInTheDocument();
     });
 
     it('should render confidence for medium confidence (0.4-0.7)', () => {
@@ -258,7 +258,7 @@ describe('ResponseDisplay', () => {
         />
       );
 
-      expect(screen.getByText('55% confidence')).toBeInTheDocument();
+      expect(screen.getByText(/55%/)).toBeInTheDocument();
     });
 
     it('should render confidence for low confidence (<0.4)', () => {
@@ -273,7 +273,7 @@ describe('ResponseDisplay', () => {
         />
       );
 
-      expect(screen.getByText('25% confidence')).toBeInTheDocument();
+      expect(screen.getByText(/25%/)).toBeInTheDocument();
     });
   });
 });

@@ -11,6 +11,7 @@ const ACTIVE_KEY = 'lifeforge_active_session';
 
 export const useDocumentLibrary = () => {
   const [documents, setDocuments] = useState<LibraryEntry[]>(() => {
+    if (typeof window === 'undefined') return [];
     try {
       return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '[]');
     } catch {
@@ -18,9 +19,10 @@ export const useDocumentLibrary = () => {
     }
   });
 
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(() =>
-    localStorage.getItem(ACTIVE_KEY)
-  );
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    return localStorage.getItem(ACTIVE_KEY);
+  });
 
   const addDocument = (session_id: string, filename: string) => {
     const entry: LibraryEntry = {
