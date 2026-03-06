@@ -7,7 +7,7 @@ A multimodal RAG system. Upload a PDF — ask questions about it. Extracts text 
 
 **Architecture**
 
-<img src="images/lifeforge-architecture.png" width="30%" />
+<img src="images/lifeforge-architecture.png" width="48%" height="50%" />
 
 ## Stack
 

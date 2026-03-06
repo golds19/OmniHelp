@@ -131,3 +131,7 @@ notebooks/
 !DOCKER.md
 !services/backend/railway.toml
 readmes.md
+
+# other files
+test-debug.pdf
+test-with-images.pdf
