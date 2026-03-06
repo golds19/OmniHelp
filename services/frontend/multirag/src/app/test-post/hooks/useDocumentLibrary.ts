@@ -1,9 +1,15 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
+
+export interface HistoryEntry {
+  role: 'user' | 'assistant';
+  content: string;
+}
 
 export interface LibraryEntry {
   session_id: string;
   filename: string;
   ingested_at: string; // ISO timestamp
+  history: HistoryEntry[];
 }
 
 const STORAGE_KEY = 'lifeforge_docs';
@@ -13,7 +19,9 @@ export const useDocumentLibrary = () => {
   const [documents, setDocuments] = useState<LibraryEntry[]>(() => {
     if (typeof window === 'undefined') return [];
     try {
-      return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '[]');
+      const stored: unknown[] = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '[]');
+      // Migrate legacy entries that lack a history field
+      return stored.map((d: any) => ({ history: [], ...d }));
     } catch {
       return [];
     }
@@ -29,6 +37,7 @@ export const useDocumentLibrary = () => {
       session_id,
       filename,
       ingested_at: new Date().toISOString(),
+      history: [],
     };
     setDocuments(prev => {
       const next = [...prev, entry];
@@ -56,5 +65,33 @@ export const useDocumentLibrary = () => {
     }
   };
 
-  return { documents, activeSessionId, addDocument, selectDocument, removeDocument };
+  const updateSessionHistory = useCallback(
+    (session_id: string, history: HistoryEntry[]) => {
+      setDocuments(prev => {
+        const next = prev.map(d =>
+          d.session_id === session_id ? { ...d, history } : d
+        );
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+        }
+        return next;
+      });
+    },
+    []
+  );
+
+  const clearActiveSession = useCallback(() => {
+    setActiveSessionId(null);
+    if (typeof window !== 'undefined') localStorage.removeItem(ACTIVE_KEY);
+  }, []);
+
+  return {
+    documents,
+    activeSessionId,
+    addDocument,
+    selectDocument,
+    removeDocument,
+    updateSessionHistory,
+    clearActiveSession,
+  };
 };

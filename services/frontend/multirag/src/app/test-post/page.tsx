@@ -63,7 +63,7 @@ export default function TestPost() {
   }, []);
 
   const { ingested, ingestStatus, isPending, sessionId, ingestDocument, resetIngestStatus } = useDocumentIngest();
-  const { response, isStreaming, queryLog, conversationHistory, queryDocument, stopQuery, clearResponse, clearHistory } = useDocumentQuery();
+  const { response, isStreaming, queryLog, conversationHistory, queryDocument, stopQuery, clearResponse, clearHistory, restoreHistory } = useDocumentQuery();
   const library = useDocumentLibrary();
 
   const activeSessionId = library.activeSessionId ?? sessionId;
@@ -89,6 +89,12 @@ export default function TestPost() {
     clearResponse();
   };
 
+  const handleFileDrop = (file: File) => {
+    setFile(file);
+    resetIngestStatus();
+    clearResponse();
+  };
+
   const handleIngest = async (e: React.FormEvent) => {
     e.preventDefault();
     clearResponse();
@@ -107,8 +113,16 @@ export default function TestPost() {
   const handleSelectDocument = (session_id: string) => {
     library.selectDocument(session_id);
     clearResponse();
-    clearHistory();
+    const entry = library.documents.find(d => d.session_id === session_id);
+    restoreHistory(entry?.history ?? []);
   };
+
+  // Persist conversation history to the library after each exchange
+  useEffect(() => {
+    if (activeSessionId && conversationHistory.length > 0) {
+      library.updateSessionHistory(activeSessionId, conversationHistory);
+    }
+  }, [conversationHistory]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Derive past Q&A pairs from conversation history
   const historyPairs: { user: string; assistant: string }[] = [];
@@ -148,7 +162,14 @@ export default function TestPost() {
           activeSessionId={library.activeSessionId}
           onSelect={handleSelectDocument}
           onRemove={library.removeDocument}
-          onNewUpload={() => uploadSectionRef.current?.scrollIntoView({ behavior: 'smooth' })}
+          onNewUpload={() => {
+            library.clearActiveSession();
+            resetIngestStatus();
+            setFile(null);
+            clearResponse();
+            clearHistory();
+            uploadSectionRef.current?.scrollIntoView({ behavior: 'smooth' });
+          }}
           isOpen={sidebarOpen}
         />
 
@@ -164,9 +185,10 @@ export default function TestPost() {
                 <FileUploadSection
                   file={file}
                   isPending={isPending}
-                  ingested={ingested}
+                  ingested={ingested || !!library.activeSessionId}
                   ingestStatus={ingestStatus}
                   onFileChange={handleFileChange}
+                  onFileDrop={handleFileDrop}
                   onIngest={handleIngest}
                 />
               </div>

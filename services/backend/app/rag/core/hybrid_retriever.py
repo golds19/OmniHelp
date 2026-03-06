@@ -23,7 +23,7 @@ class HybridMultiModalRetrieval:
                         Queried with CLIP's text encoder for cross-modal retrieval.
     """
     query: str
-    text_faiss_store: FAISS
+    text_faiss_store: Optional[FAISS]
     image_data_store: Dict
     bm25_retriever: Optional[BM25Retriever] = None
     image_faiss_store: Optional[FAISS] = None
@@ -38,6 +38,8 @@ class HybridMultiModalRetrieval:
         Returns:
             List of (Document, L2-distance) tuples
         """
+        if self.text_faiss_store is None:
+            return []
         results = self.text_faiss_store.similarity_search_with_score(self.query, k=self.k)
         return results
 
@@ -96,7 +98,7 @@ class HybridMultiModalRetrieval:
         Top similarity score from the text FAISS index (L2 → [0,1] similarity).
         Image docs are excluded — their L2 distance is in a different space.
         """
-        if not docs:
+        if not docs or self.text_faiss_store is None:
             return 0.0
         scored = self.text_faiss_store.similarity_search_with_score(self.query, k=1)
         if scored:

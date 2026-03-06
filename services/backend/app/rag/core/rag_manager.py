@@ -33,6 +33,38 @@ class MultiModalRAGSystem:
         self.image_data_store = {}
         self.vision_llm = None
 
+    def initialize_from_image(self, image_path: str, vision_llm: Optional[ChatOpenAI] = None):
+        """
+        Initialize the RAG system with a standalone image file (PNG/JPG).
+
+        Creates an image-only FAISS index. Queries use CLIP cross-modal retrieval.
+        """
+        if self._initialized:
+            logger.info("RAG system already initialized. Resetting for new document...")
+            self.reset()
+
+        logger.info(f"Initializing RAG system from image file: {image_path}")
+
+        data_embedder = DataEmbedding(pdf_path=image_path)
+        self.all_docs, self.all_embeddings, self.image_data_store, self.text_docs = \
+            data_embedder.process_and_embed_image_file()
+
+        vs = VectorStore(
+            all_docs=self.all_docs,
+            all_embeddings=self.all_embeddings,
+            image_data_store=self.image_data_store,
+            text_docs=self.text_docs,
+        )
+
+        hybrid_stores = vs.create_hybrid_retrievers()
+        self.text_vectorStore = hybrid_stores["text_faiss_store"]
+        self.image_vectorStore = hybrid_stores["image_faiss_store"]
+        self.bm25_retriever = hybrid_stores["bm25_retriever"]
+
+        self.vision_llm = vision_llm
+        self._initialized = True
+        logger.info("RAG system initialized from image file (image-only index)")
+
     def initialize(self, pdf_path: str, vision_llm: Optional[ChatOpenAI] = None):
         """
         Initialize the RAG system with a PDF document.

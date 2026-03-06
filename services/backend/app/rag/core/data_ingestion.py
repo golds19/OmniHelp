@@ -114,3 +114,31 @@ class DataEmbedding:
         )
         doc.close()
         return self.all_docs, self.all_embeddings, self.image_data_store, self.text_docs
+
+    def process_and_embed_image_file(self):
+        """
+        Handle standalone PNG/JPG uploads.
+
+        Embeds the image with CLIP and stores it as base64. No text chunks
+        or BM25 retriever are created — queries use image FAISS only.
+        """
+        logger.info(f"Processing standalone image file: {self.pdf_path}")
+        pil_image = Image.open(self.pdf_path).convert("RGB")
+        image_id = "page_0_img_0"
+
+        buffered = io.BytesIO()
+        pil_image.save(buffered, format="PNG")
+        img_base64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
+        self.image_data_store[image_id] = img_base64
+
+        embedding = self.embedder.embed_image(pil_image)
+        self.all_embeddings.append(embedding)
+
+        img_doc = Document(
+            page_content=f"[Image: {image_id}]",
+            metadata={"page": 0, "type": "image", "image_id": image_id},
+        )
+        self.all_docs.append(img_doc)
+
+        logger.info("Standalone image processing complete: 1 image embedded")
+        return self.all_docs, self.all_embeddings, self.image_data_store, self.text_docs

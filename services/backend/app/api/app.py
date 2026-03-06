@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import os
 import re
 import time
 import uuid
@@ -248,9 +249,12 @@ def ping():
 @app.post("/ingest")
 # @limiter.limit("3/day")
 async def ingest_document(request: Request, file: UploadFile = File(...)):
-    """Ingest a PDF into the standard (non-agentic) RAG system."""
-    if not file.filename.endswith('.pdf'):
-        raise HTTPException(status_code=400, detail="Only PDF files are supported")
+    """Ingest a PDF or image file into the standard (non-agentic) RAG system."""
+    ALLOWED_EXTENSIONS = {'.pdf', '.png', '.jpg', '.jpeg'}
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="Only PDF and image files (.png, .jpg) are supported")
+    is_image_file = ext in {'.png', '.jpg', '.jpeg'}
 
     temp_dir = Path(AppConfig.TEMP_DIR)
     temp_dir.mkdir(exist_ok=True)
@@ -270,9 +274,12 @@ async def ingest_document(request: Request, file: UploadFile = File(...)):
                 buffer.write(chunk)
         logger.info(f"[ingest] Saved upload to {temp_file} ({temp_file.stat().st_size} bytes)")
 
-        logger.info("[ingest] Starting PDF processing and embedding...")
+        logger.info("[ingest] Starting document processing and embedding...")
         data_embedder = DataEmbedding(str(temp_file))
-        docs, embeddings, img_store, text_docs = data_embedder.process_and_embedd_docs()
+        if is_image_file:
+            docs, embeddings, img_store, text_docs = data_embedder.process_and_embed_image_file()
+        else:
+            docs, embeddings, img_store, text_docs = data_embedder.process_and_embedd_docs()
         logger.info(
             f"[ingest] Embedding complete: {len(docs)} docs, "
             f"{len(embeddings)} embeddings, {len(img_store)} images, "
@@ -380,9 +387,12 @@ async def query_documents(request: Request, query: Query):
 @app.post("/ingest-agentic")
 # @limiter.limit("3/day")
 async def ingest_document_agentic(request: Request, file: UploadFile = File(...)):
-    """Ingest a PDF into the agentic RAG system."""
-    if not file.filename.endswith('.pdf'):
-        raise HTTPException(status_code=400, detail="Only PDF files are supported")
+    """Ingest a PDF or image file into the agentic RAG system."""
+    ALLOWED_EXTENSIONS = {'.pdf', '.png', '.jpg', '.jpeg'}
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="Only PDF and image files (.png, .jpg) are supported")
+    is_image_file = ext in {'.png', '.jpg', '.jpeg'}
 
     temp_dir = Path(AppConfig.TEMP_DIR)
     temp_dir.mkdir(exist_ok=True)
@@ -404,7 +414,10 @@ async def ingest_document_agentic(request: Request, file: UploadFile = File(...)
 
         logger.info("[ingest-agentic] Initializing agentic RAG system...")
         ras = MultiModalRAGSystem()
-        ras.initialize(pdf_path=str(temp_file), vision_llm=llm)
+        if is_image_file:
+            ras.initialize_from_image(image_path=str(temp_file), vision_llm=llm)
+        else:
+            ras.initialize(pdf_path=str(temp_file), vision_llm=llm)
         logger.info("[ingest-agentic] Agentic RAG initialized successfully")
 
         # Generate session and persist to disk
@@ -522,14 +535,23 @@ async def query_documents_agentic_stream(request: Request, query: Query):
 
             top_similarity = 0.0
             try:
-                text_emb = get_text_embedder().encode(
-                    query.question, normalize_embeddings=True
-                ).tolist()
-                scored = ras.text_vectorStore.similarity_search_with_score_by_vector(
-                    text_emb, k=1
-                )
-                if scored:
-                    top_similarity = round(float(1 / (1 + scored[0][1])), 3)
+                if ras.text_vectorStore is not None:
+                    text_emb = get_text_embedder().encode(
+                        query.question, normalize_embeddings=True
+                    ).tolist()
+                    scored = ras.text_vectorStore.similarity_search_with_score_by_vector(
+                        text_emb, k=1
+                    )
+                    if scored:
+                        top_similarity = round(float(1 / (1 + scored[0][1])), 3)
+                elif ras.image_vectorStore is not None:
+                    from app.rag.core.embedder import get_embedder
+                    img_emb = get_embedder().embed_text(query.question).tolist()
+                    scored = ras.image_vectorStore.similarity_search_with_score_by_vector(
+                        img_emb, k=1
+                    )
+                    if scored:
+                        top_similarity = round(float(1 / (1 + scored[0][1])), 3)
             except Exception:
                 pass
 
@@ -537,13 +559,18 @@ async def query_documents_agentic_stream(request: Request, query: Query):
             from app.rag.core.config import HybridSearchConfig
 
             source_pages = {s["page"] for s in sources}
-            relevant_docs = (
-                [d for d in ras.text_docs if d.metadata.get("page") in source_pages]
-                or ras.text_docs[:10]
-            )
-            answer_source_sim = compute_answer_source_similarity(answer, relevant_docs)
-            confidence        = compute_confidence(top_similarity, num_chunks)
-            is_hallucination  = answer_source_sim < HybridSearchConfig.HALLUCINATION_THRESHOLD
+            if not ras.text_docs:
+                # Image-only: text grounding inapplicable — use retrieval similarity as proxy
+                answer_source_sim = top_similarity
+                is_hallucination  = False
+            else:
+                relevant_docs = (
+                    [d for d in ras.text_docs if d.metadata.get("page") in source_pages]
+                    or ras.text_docs[:10]
+                )
+                answer_source_sim = compute_answer_source_similarity(answer, relevant_docs)
+                is_hallucination  = answer_source_sim < HybridSearchConfig.HALLUCINATION_THRESHOLD
+            confidence = compute_confidence(top_similarity, max(num_chunks, num_images))
 
             full_result = {
                 "answer": answer,

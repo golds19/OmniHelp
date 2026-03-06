@@ -23,3 +23,4 @@ class AgenticRAGState(TypedDict):
     sources: List[Dict]  # List of {"page": int, "type": str}
     num_images: int
     num_text_chunks: int
+    image_ids: List[str]  # e.g. ["page_2_img_0", "page_5_img_1"]
