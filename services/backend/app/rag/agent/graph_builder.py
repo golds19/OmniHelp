@@ -10,6 +10,7 @@ from .rag_state import AgenticRAGState
 from ..core.rag_manager import MultiModalRAGSystem
 from .agent_tools import get_agent_tools
 from .react_node import create_agent_executor, agent_node
+from .vision_node import create_vision_synthesis_node
 
 
 def _build_messages(question: str, history: Optional[List[dict]]) -> List[BaseMessage]:
@@ -53,14 +54,23 @@ def build_agentic_rag_graph(
         """Run the agent and update state."""
         return agent_node(state, agent_executor)
 
+    def should_run_vision(state: AgenticRAGState) -> str:
+        """Route to vision_synthesis if images were retrieved, else END."""
+        return "vision_synthesis" if state.get("image_ids") else END
+
     # Add nodes
     workflow.add_node("agent", run_agent)
+    workflow.add_node("vision_synthesis", create_vision_synthesis_node(rag_system, llm))
 
     # Set entry point
     workflow.set_entry_point("agent")
 
-    # Add edge to end
-    workflow.add_edge("agent", END)
+    # Agent → vision synthesis (if images found) or END
+    workflow.add_conditional_edges("agent", should_run_vision, {
+        "vision_synthesis": "vision_synthesis",
+        END: END,
+    })
+    workflow.add_edge("vision_synthesis", END)
 
     # Compile the graph
     graph = workflow.compile()
@@ -96,7 +106,8 @@ def run_agentic_rag(
         "answer": "",
         "sources": [],
         "num_images": 0,
-        "num_text_chunks": 0
+        "num_text_chunks": 0,
+        "image_ids": [],
     }
 
     # Run the graph
@@ -140,21 +151,34 @@ async def stream_agentic_rag(
         "answer": "",
         "sources": [],
         "num_images": 0,
-        "num_text_chunks": 0
+        "num_text_chunks": 0,
+        "image_ids": [],
     }
 
     final_state: dict = {}
+    agent_buffer: list = []
+    vision_ran: bool = False
 
     async for mode, data in graph.astream(
         initial_state,
         stream_mode=["messages", "values"],
     ):
         if mode == "messages":
-            chunk, _metadata = data
+            chunk, metadata = data
             if getattr(chunk, "content", None):
-                yield chunk.content
+                node = metadata.get("langgraph_node", "")
+                if node == "vision_synthesis":
+                    vision_ran = True
+                    yield chunk.content   # stream vision tokens immediately
+                else:
+                    agent_buffer.append(chunk.content)   # buffer agent tokens
         elif mode == "values":
             final_state = data  # keep overwriting; last snapshot = final state
+
+    # Text-only query: emit buffered agent tokens; vision query: discard buffer
+    if not vision_ran:
+        for token in agent_buffer:
+            yield token
 
     # After all tokens are yielded, populate the collector with the final state
     if result_collector is not None:

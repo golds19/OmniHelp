@@ -99,6 +99,7 @@ def agent_node(state: AgenticRAGState, agent_executor: AgentExecutor) -> Agentic
     sources = []
     num_images = 0
     num_text_chunks = 0
+    image_ids = []
 
     for action, observation in intermediate_steps:
         # Parse the observation for page references
@@ -112,6 +113,9 @@ def agent_node(state: AgenticRAGState, agent_executor: AgentExecutor) -> Agentic
                     num_text_chunks += 1
 
             if "Images Found:" in observation:
+                # Parse specific image IDs for multimodal synthesis
+                ids = re.findall(r'Image (page_\d+_img_\d+)', observation)
+                image_ids.extend(ids)
                 # Count image references
                 image_matches = re.findall(r'\[Page (\d+)\]: Image', observation)
                 for page in image_matches:
@@ -125,5 +129,6 @@ def agent_node(state: AgenticRAGState, agent_executor: AgentExecutor) -> Agentic
         "retrieved_docs": state.get("retrieved_docs", []),
         "sources": sources if sources else state.get("sources", []),
         "num_images": num_images if num_images else state.get("num_images", 0),
-        "num_text_chunks": num_text_chunks if num_text_chunks else state.get("num_text_chunks", 0)
+        "num_text_chunks": num_text_chunks if num_text_chunks else state.get("num_text_chunks", 0),
+        "image_ids": image_ids,
     }

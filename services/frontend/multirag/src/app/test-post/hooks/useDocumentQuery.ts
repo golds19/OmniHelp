@@ -153,6 +153,10 @@ export const useDocumentQuery = () => {
     setConversationHistory([]);
   };
 
+  const restoreHistory = useCallback((history: HistoryEntry[]) => {
+    setConversationHistory(history);
+  }, []);
+
   return {
     response,
     isStreaming,
@@ -162,5 +166,6 @@ export const useDocumentQuery = () => {
     stopQuery,
     clearResponse,
     clearHistory,
+    restoreHistory,
   };
 };

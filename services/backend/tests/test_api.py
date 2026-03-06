@@ -34,6 +34,47 @@ class TestIngestEndpoint:
         assert response.status_code == 400
         assert "PDF" in response.json()["detail"]
 
+    def test_ingest_rejects_docx(self, app_client):
+        """Unsupported file extensions (.docx) are still rejected after the image support addition."""
+        fake = BytesIO(b"not a real document")
+        response = app_client.post(
+            "/ingest",
+            files={"file": ("report.docx", fake, "application/octet-stream")}
+        )
+        assert response.status_code == 400
+        assert "PDF" in response.json()["detail"]
+
+    def test_ingest_accepts_png(self, app_client):
+        """PNG image files are accepted by /ingest and routed to process_and_embed_image_file."""
+        with patch('app.api.app.DataEmbedding') as MockDE, \
+             patch('app.api.app.VectorStore') as MockVS, \
+             patch('app.api.app.save_index'), \
+             patch('app.api.app.save_document', return_value=1):
+
+            mock_de = MagicMock()
+            mock_de.process_and_embed_image_file.return_value = ([], [], {}, [])
+            MockDE.return_value = mock_de
+
+            mock_vs = MagicMock()
+            mock_vs.create_hybrid_retrievers.return_value = {
+                "text_faiss_store": None,
+                "image_faiss_store": MagicMock(),
+                "bm25_retriever": None,
+                "image_data_store": {},
+            }
+            MockVS.return_value = mock_vs
+
+            fake_png = BytesIO(b"\x89PNG\r\n\x1a\n" + b"\x00" * 100)
+            response = app_client.post(
+                "/ingest",
+                files={"file": ("figure.png", fake_png, "image/png")}
+            )
+
+            assert response.status_code == 200
+            assert "session_id" in response.json()
+            mock_de.process_and_embed_image_file.assert_called_once()
+            mock_de.process_and_embedd_docs.assert_not_called()
+
     def test_ingest_accepts_pdf(self, app_client, sample_pdf_bytes):
         """Test that PDF files are accepted (mocking processing)."""
         with patch('app.api.app.DataEmbedding') as MockDE, \
@@ -203,6 +244,30 @@ class TestAgenticIngestEndpoint:
 
         assert response.status_code == 400
         assert "PDF" in response.json()["detail"]
+
+    def test_agentic_ingest_accepts_png(self, app_client):
+        """PNG files are accepted by /ingest-agentic and routed to initialize_from_image."""
+        with patch('app.api.app.MultiModalRAGSystem') as MockRAS, \
+             patch('app.api.app.save_index'), \
+             patch('app.api.app.save_document', return_value=1):
+
+            mock_ras = MagicMock()
+            mock_ras.text_vectorStore = None
+            mock_ras.image_vectorStore = MagicMock()
+            mock_ras.image_data_store = {}
+            mock_ras.text_docs = []
+            MockRAS.return_value = mock_ras
+
+            fake_png = BytesIO(b"\x89PNG\r\n\x1a\n" + b"\x00" * 100)
+            response = app_client.post(
+                "/ingest-agentic",
+                files={"file": ("figure.png", fake_png, "image/png")}
+            )
+
+            assert response.status_code == 200
+            assert response.json()["status"] == "initialized"
+            mock_ras.initialize_from_image.assert_called_once()
+            mock_ras.initialize.assert_not_called()
 
     def test_agentic_ingest_accepts_pdf(self, app_client, sample_pdf_bytes):
         """Test that agentic PDF ingestion works."""

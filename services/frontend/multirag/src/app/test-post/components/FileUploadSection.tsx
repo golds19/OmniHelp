@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { UploadIcon, SpinnerIcon, CheckCircleIcon, ErrorCircleIcon } from './Icons';
 
 interface Props {
@@ -7,6 +7,7 @@ interface Props {
   ingested: boolean;
   ingestStatus: string;
   onFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onFileDrop: (file: File) => void;
   onIngest: (e: React.FormEvent) => void;
 }
 
@@ -14,8 +15,9 @@ const fmt = (bytes: number) => bytes < 1048576
   ? `${(bytes / 1024).toFixed(1)} KB`
   : `${(bytes / 1048576).toFixed(1)} MB`;
 
-export const FileUploadSection = ({ file, isPending, ingested, ingestStatus, onFileChange, onIngest }: Props) => {
+export const FileUploadSection = ({ file, isPending, ingested, ingestStatus, onFileChange, onFileDrop, onIngest }: Props) => {
   const inputRef = useRef<HTMLInputElement>(null);
+  const [dragActive, setDragActive] = useState(false);
 
   if (ingested) {
     return (
@@ -32,7 +34,7 @@ export const FileUploadSection = ({ file, isPending, ingested, ingestStatus, onF
         >
           Change
         </button>
-        <input ref={inputRef} type="file" accept=".pdf" onChange={onFileChange} className="sr-only" />
+        <input ref={inputRef} type="file" accept=".pdf,.png,.jpg,.jpeg" onChange={onFileChange} className="sr-only" />
       </div>
     );
   }
@@ -49,13 +51,24 @@ export const FileUploadSection = ({ file, isPending, ingested, ingestStatus, onF
       <form onSubmit={onIngest} className="space-y-3">
         <div
           onClick={() => !isPending && inputRef.current?.click()}
+          onDragOver={(e) => { e.preventDefault(); !isPending && setDragActive(true); }}
+          onDragLeave={(e) => { e.preventDefault(); setDragActive(false); }}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragActive(false);
+            if (isPending) return;
+            const dropped = e.dataTransfer.files?.[0];
+            if (dropped) onFileDrop(dropped);
+          }}
           className={`rounded-xl border-2 border-dashed cursor-pointer transition-all duration-200 group ${
-            file
+            dragActive
+              ? 'border-accent bg-accent-muted/50 scale-[1.01]'
+              : file
               ? 'border-accent/40 bg-accent-muted'
               : 'border-border hover:border-accent/40 hover:bg-accent-muted/30'
           }`}
         >
-          <input ref={inputRef} type="file" accept=".pdf" onChange={onFileChange}
+          <input ref={inputRef} type="file" accept=".pdf,.png,.jpg,.jpeg" onChange={onFileChange}
             disabled={isPending} className="sr-only" />
 
           <div className="px-6 py-8 flex flex-col items-center gap-3 text-center">
@@ -73,8 +86,10 @@ export const FileUploadSection = ({ file, isPending, ingested, ingestStatus, onF
               </div>
             ) : (
               <div>
-                <p className="text-sm text-foreground">Drop a PDF here</p>
-                <p className="text-[11px] text-foreground-dim mt-0.5">or click to browse · max 10 MB</p>
+                <p className="text-sm text-foreground">
+                  {dragActive ? 'Release to upload' : 'Drop a PDF or image here'}
+                </p>
+                <p className="text-[11px] text-foreground-dim mt-0.5">or click to browse · PDF, PNG, JPG · max 10 MB</p>
               </div>
             )}
           </div>
